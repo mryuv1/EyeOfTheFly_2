@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import butter, filtfilt, lfilter
 
 
 def unit_filter(signal):
@@ -16,8 +17,14 @@ def butter_lpf(signal, cutoff_frequency, fs, order=5):
     return filtered_signal
 
 
+def butter_hpf(data, cutoff_frequency, fs, order=5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff_frequency / nyq
+    b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    return filtfilt(b, a, data, padlen=len(data)//2)
+
+
 def delay_filter(signal, stride=1):
     signal = np.array(signal)
     length = signal.shape[0]
     return np.pad(signal[stride:], [0, stride], mode='constant')
-
