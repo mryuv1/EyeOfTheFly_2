@@ -40,8 +40,8 @@ def get_emd_responses(frames, photoreceptor: PhotoreceptorImageConverter.Photore
         frequency_response_emd = [np.abs(np.fft.rfft(tr)) for tr in emd_mid_row_response]
         angle_response_emd = angle_response_from_frequency_response_array(frequency_response_emd)
         angle_response_over_time.append(angle_response_emd)
-    return np.array(angle_response_over_time)
-    #return np.array(emd_mid_row_response)
+    #return np.array(angle_response_over_time)  # filtered version
+    return np.array(emd_mid_row_response) # unfiltered version
 
 
 def angle_response_from_frequency_response_array(frequency_response_array: np.array) -> np.array:
