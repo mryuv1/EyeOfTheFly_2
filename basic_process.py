@@ -5,6 +5,8 @@ import EOTF.EMD as EMD
 import numpy as np
 from matplotlib import pyplot as plt, cm
 from matplotlib.ticker import LinearLocator
+import pandas as pd
+import plotly.graph_objects as go
 
 BUFFER_SIZE = 120
 
@@ -80,27 +82,25 @@ def get_frames(input_clip: str, grayscale: bool = True):
 
 
 def save_surface_plot(output_array: np.array, clip_file_name: str, output_dir: str):
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    FRAMES, RESPONSES = output_array.shape
-    x = np.array(range(FRAMES))
-    y = np.array(range(RESPONSES))
-    X, Y = np.meshgrid(x, y)
-    surf = ax.plot_surface(np.transpose(X), np.transpose(Y), output_array, cmap=cm.coolwarm, linewidth=0,
-                           antialiased=False)
-    ax.set_xlabel('time [frames]')
-    ax.set_ylabel('EMD')
-    ax.set_zlabel('Amplitude')
-    # Customize the z axis.
-    ax.set_zlim(-.1, .5)
-    ax.zaxis.set_major_locator(LinearLocator(10))
-    # A StrMethodFormatter is used automatically
-    ax.zaxis.set_major_formatter('{x:.02f}')
-    ax.set_title(clip_file_name)
-    # Add a color bar which maps values to colors.
-    fig.colorbar(surf, shrink=0.5, aspect=5)
-    plt.savefig(os.path.join(output_dir, os.path.splitext(clip_file_name)[0] + '.png'))
-    plt.show()
-    print("Done")
+    fig = go.Figure(data=[go.Surface(z=output_array)])
+
+    fig.update_layout(title=clip_file_name, autosize=True, scene=dict(
+                    xaxis_title='time [frames]',
+                    yaxis_title='EMD',
+                    zaxis_title='Amplitude'))
+    fig.write_image(os.path.join(output_dir, os.path.splitext(clip_file_name)[0] + '.png'))
+    fig.show()
 
 
-basic_response_mid_row('', 'data/stripes.gif')
+#
+# z_data = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/api_docs/mt_bruno_elevation.csv')
+#
+# fig = go.Figure(data=[go.Surface(z=z_data.values)])
+#
+# fig.update_layout(title='Mt Bruno Elevation', autosize=False,
+#                   width=500, height=500,
+#                   margin=dict(l=65, r=50, b=65, t=90))
+#
+# fig.show()
+
+basic_response_mid_row(os.getcwd(), 'data/stripes.gif')
