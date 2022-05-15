@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt, cm
 from matplotlib.ticker import LinearLocator
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 
 BUFFER_SIZE = 120
 
@@ -90,6 +91,10 @@ def save_surface_plot(output_array: np.array, clip_file_name: str, output_dir: s
                     zaxis_title='Amplitude'))
     fig.write_image(os.path.join(output_dir, os.path.splitext(clip_file_name)[0] + '.png'))
     fig.show()
+
+    # If you want to plot also a EMD response and to see it's frames
+    fig2 = px.line(pd.DataFrame({'amp':output_array[2]}), y="amp", title='Life expectancy in Canada')
+    fig2.show()
 
 
 #
