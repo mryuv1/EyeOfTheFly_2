@@ -15,10 +15,10 @@ class EMD:
         return [self.forward(chosen_horizontal_line[:, i], chosen_horizontal_line[:, i + 1]) for i in
                 range(chosen_horizontal_line.shape[1] - 1)]
 
-    # TODO: Add kernel support (when time comes)
+    def forward_video(self, buffer):
+        result = []
+        for r in range(1, buffer[0].shape[0]):
+            result.append(self.forward_row(buffer, r))
+        return list(np.transpose(np.array(result), (2, 0, 1)))
 
-# emd_test = EMD()
-# s1 = (1, 2, 3)
-# s2 = (2, 3, 4)
-# emd_test.forward(s1, s2)
-# print(emd_test.forward(s1, s2))
+    # TODO: Add kernel support (when time comes)
