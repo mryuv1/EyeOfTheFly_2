@@ -117,8 +117,8 @@ def results_path(clip_path):
 clip_path = 'data/complex_stripes.gif'
 clip_file_name = os.path.splitext(clip_path)[0]
 
-#emd_response_mid_row(clip_path)
-#exit()
+emd_response_mid_row(clip_path)
+exit()
 
 emd_result = calc_emd_responses(read_frames(clip_path))
 emd_result = Utils.rescale_frames(emd_result, 0, 255, np.uint8)
