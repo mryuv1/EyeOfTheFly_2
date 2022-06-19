@@ -15,7 +15,7 @@ def forward(frames, r, c, t, template):
     :param r: Pixel row
     :param c: Pixel column
     :param t: Frame index
-    :param template: A template, as explained in (Nitzany 2014)
+    :param template: As explained in (Nitzany 2014). First axis temporal, second axis spacial.
     :return: EMD response
     """
     def forward_raw(frames, c, r, t, template):
@@ -43,7 +43,7 @@ def forward_row(frames, row_index, template):
     Calculates EMD response for a row in a video
     :param frames: A list of frames, each one is an np matrix
     :param row_index:
-    :param template: A template, as explained in (Nitzany 2014)
+    :param template: As explained in (Nitzany 2014). First axis temporal, second axis spacial.
     :return: A matrix of EMD responses. First axis is spacial, second is temporal.
     """
     result = np.zeros((frames[0].shape[1], len(frames)))
@@ -57,15 +57,18 @@ def forward_video(frames, template, axis=0):
     """
     Calculates EMD response for an entire video.
     :param frames: A list of frames, each one is an np matrix
-    :param template: A template, as explained in (Nitzany 2014)
+    :param template: As explained in (Nitzany 2014). First axis temporal, second axis spacial.
     :param axis: Spaical axis in which to detect movement. 0 = X, 1 = Y.
     :return: A new video (as a list of frames) of EMD responses.
     """
     if axis:
+        # Transpose the video, calculate normally, and finally transpose again
         frames = [np.transpose(f) for f in frames]
+
     result = []
     for r in range(frames[0].shape[0]):
         result.append(forward_row(frames, r, template))
+
     if axis:
         result = list(np.transpose(np.array(result), (2, 1, 0)))
     else:
