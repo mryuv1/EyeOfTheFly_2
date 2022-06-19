@@ -2,7 +2,7 @@ import os
 import cv2
 import EOTF.PhotoreceptorImageConverter as PhotoreceptorImageConverter
 import EOTF.EMD as EMD
-import EOTF.Utils as Utils
+import EOTF.Utils.VideoUtils as VideoUtils
 import numpy as np
 from matplotlib import pyplot as plt, cm
 from matplotlib.ticker import LinearLocator
@@ -30,45 +30,11 @@ def calc_emd_responses(frames, row=-1):
         frames[0].shape, 6000)
     buffer = photoreceptor.receive(frames)  # A list of frames
     if row < 0:
-        return emd.forward_video(buffer)
-    return emd.forward_row(buffer, np.round(row*buffer[0].shape[0]).astype(np.uint8))
-
-
-def read_frames(input_clip: str, grayscale: bool = True):
-    """
-    Reads a video or a gif.
-    :param input_clip: Path of the input video or gif.
-    :param grayscale: Whether or not convert to grayscale.
-    :return: The input video, as a list of numpy matrices.
-    """
-    cap = cv2.VideoCapture(input_clip)
-    frames = []
-    while True:
-        ret, frame = cap.read()
-        if cv2.waitKey(1) & 0xFF == ord('q') or ret is False:
-            cap.release()
-            cv2.destroyAllWindows()
-            break
-        if grayscale:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frames.append(frame)
-    return frames
-
-
-def emd_response_mid_row(input_clip: str):
-    """
-    Calculates the angle response of an array of EMDs located at the the medial horizontal line of each frame.
-    Inspired by the paper - "Spatial Encoding of Translational Optic Flow in Planar Scenes by Elementary Motion Detector Arrays".
-    :param input_clip: The clip to process.
-    """
-    frames = read_frames(input_clip)
-    angle_response_over_time_array = calc_emd_responses(frames, 0.5)
-    averaged_responses = []
-    # for i in range(angle_response_over_time_array.shape[1]):
-    #     averaged_responses.append(moving_average(angle_response_over_time_array[:, i]))
-    # averaged_responses = np.array(averaged_responses)
-    # pickle_output_array(angle_response_over_time_array, clip_file_name, output_dir)
-    save_surface_plot(np.array(angle_response_over_time_array), clip_file_name, results_path(clip_path)+'mid_row_graph.png')
+        res = emd.forward_video(buffer)
+    else:
+        res = emd.forward_row(buffer, np.round(row * buffer[0].shape[0]).astype(np.uint8))
+    res.pop()  # Remove last frames, because it's all zeros...
+    return res
 
 
 def save_surface_plot(output_array: np.array, clip_file_name: str, output_file_name: str):
@@ -108,18 +74,22 @@ def results_path(clip_path):
     :param clip_path:
     :return: Path to the results directory
     """
-    results_path = os.path.splitext(clip_path)[0] + '/'
-    if not os.path.exists(results_path):
-        os.makedirs(results_path)
-    return results_path
+    res = os.path.splitext(clip_path)[0] + '/'
+    if not os.path.exists(res):
+        os.makedirs(res)
+    return res
 
 
 clip_path = 'data/complex_stripes.gif'
 clip_file_name = os.path.splitext(clip_path)[0]
+frames = VideoUtils.read_frames(clip_path)
 
-emd_response_mid_row(clip_path)
-exit()
+# Calculate EMD responses for middle row and save surface plot
+emd_response_mid_row = calc_emd_responses(frames, 0.5)
+save_surface_plot(np.array(emd_response_mid_row), clip_file_name, results_path(clip_path) + 'mid_row_graph.png')
 
-emd_result = calc_emd_responses(read_frames(clip_path))
-emd_result = Utils.rescale_frames(emd_result, 0, 255, np.uint8)
-imageio.mimsave(results_path(clip_path)+'emd_results_test.gif', emd_result)
+# exit()
+
+# Calculate EMD responses for entire frame and save as a gif
+emd_result = calc_emd_responses(frames)
+imageio.mimsave(results_path(clip_path) + 'emd_results_test.gif', VideoUtils.rescale(emd_result, 0, 255, np.uint8))

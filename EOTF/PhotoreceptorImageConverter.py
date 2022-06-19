@@ -68,8 +68,8 @@ class PhotoreceptorImageConverter:
                 padded_pic[i, j] = pic[i - self.v_padding, j - self.h_padding]
         return padded_pic
 
-    def receive(self, movie: np.array) -> np.array:
-        return np.array([self.apply(frame) for frame in movie])
+    def receive(self, movie: list) -> list:
+        return [self.apply(frame) for frame in movie]
 
     def stream(self, movie, buffer_size: int = 1):
         buffer = []

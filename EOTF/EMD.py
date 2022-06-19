@@ -1,4 +1,4 @@
-from EOTF.SignalFilters import delay_filter, unit_filter
+from EOTF.Utils.SignalFilters import delay_filter, unit_filter
 import numpy as np
 
 
