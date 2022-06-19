@@ -24,16 +24,11 @@ def calc_emd_responses(frames, row=-1):
     :return: The EMD responses, as a list of frames.
     """
     # row is relative to the frame's height - for example, mid row is 0.5
-    emd = EMD.EMD()
-    photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
-        PhotoreceptorImageConverter.make_gaussian_kernel(15),
-        frames[0].shape, 6000)
-    buffer = photoreceptor.receive(frames)  # A list of frames
     if row < 0:
-        res = emd.forward_video(buffer)
+        res = EMD.forward_video(frames, EMD.TEMPLATE_GLIDER, axis=1)
+        res.pop()
     else:
-        res = emd.forward_row(buffer, np.round(row * buffer[0].shape[0]).astype(np.uint8))
-    res.pop()  # Remove last frames, because it's all zeros...
+        res = EMD.forward_row(frames, np.round(row * frames[0].shape[0]).astype(np.uint8), EMD.TEMPLATE_FOURIER)
     return res
 
 
@@ -68,7 +63,7 @@ def save_surface_plot(output_array: np.array, clip_file_name: str, output_file_n
     print("Done")
 
 
-def results_path(clip_path):
+def results_path(clip_path, file_name = ''):
     """
     Creates a results directory for a given clip.
     :param clip_path:
@@ -77,19 +72,26 @@ def results_path(clip_path):
     res = os.path.splitext(clip_path)[0] + '/'
     if not os.path.exists(res):
         os.makedirs(res)
-    return res
+    return res + file_name
 
 
-clip_path = 'data/complex_stripes.gif'
+clip_path = 'data/complex_movement.gif'
 clip_file_name = os.path.splitext(clip_path)[0]
 frames = VideoUtils.read_frames(clip_path)
 
-# Calculate EMD responses for middle row and save surface plot
-emd_response_mid_row = calc_emd_responses(frames, 0.5)
-save_surface_plot(np.array(emd_response_mid_row), clip_file_name, results_path(clip_path) + 'mid_row_graph.png')
-
-# exit()
+photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
+    PhotoreceptorImageConverter.make_gaussian_kernel(15),
+    frames[0].shape, 6000)
+frames = photoreceptor.receive(frames)  # A list of frames
 
 # Calculate EMD responses for entire frame and save as a gif
 emd_result = calc_emd_responses(frames)
-imageio.mimsave(results_path(clip_path) + 'emd_results_test.gif', VideoUtils.rescale(emd_result, 0, 255, np.uint8))
+imageio.mimsave(results_path(clip_path, 'emd_results_test.gif'), VideoUtils.rescale(emd_result, 0, 255, np.uint8))
+
+exit()
+
+# Calculate EMD responses for middle row and save surface plot
+emd_response_mid_row = calc_emd_responses(frames, 0.5)
+save_surface_plot(np.array(emd_response_mid_row), clip_file_name, results_path(clip_path, 'mid_row_graph.png'))
+
+

@@ -23,7 +23,7 @@ def read_frames(input_clip: str, grayscale: bool = True) -> list:
     return frames
 
 
-def rescale(frames, target_min = 0, target_max = 1):
+def rescale(frames, target_min=0, target_max=1):
     # frames = list of numpy matrices
     min_val = np.min(frames)
     max_val = np.max(frames)
@@ -35,3 +35,19 @@ def rescale(frames, target_min, target_max, target_type):
     min_val = np.min(frames)
     max_val = np.max(frames)
     return [(target_min + (target_max - target_min) * (i - min_val) / (max_val - min_val)).astype(target_type) for i in frames]
+
+
+def length(frames):
+    return len(frames)
+
+
+def width(frames):
+    return frames[0].shape[1]
+
+
+def height(frames):
+    return frames[0].shape[0]
+
+
+def mean_per_frame(frames):
+    return [np.mean(frames[i]) for i in range(length(frames))]
