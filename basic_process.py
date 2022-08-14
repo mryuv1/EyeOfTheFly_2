@@ -75,7 +75,7 @@ def results_path(clip_path, file_name = ''):
     return res + file_name
 
 
-clip_path = 'data/complex_movement.gif'
+clip_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\animations\left\left_speed_1.gif'
 clip_file_name = os.path.splitext(clip_path)[0]
 frames = VideoUtils.read_frames(clip_path)
 
@@ -85,7 +85,7 @@ photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
 frames = photoreceptor.receive(frames)  # A list of frames
 
 # Calculate EMD responses for entire frame and save as a gif
-emd_result = calc_emd_responses(frames)
+emd_result = EMD.forward_video(frames, EMD.TEMPLATE_FOURIER, axis=0, center=1)
 imageio.mimsave(results_path(clip_path, 'emd_results_test.gif'), VideoUtils.rescale(emd_result, 0, 255, np.uint8))
 
 exit()
@@ -93,5 +93,3 @@ exit()
 # Calculate EMD responses for middle row and save surface plot
 emd_response_mid_row = calc_emd_responses(frames, 0.5)
 save_surface_plot(np.array(emd_response_mid_row), clip_file_name, results_path(clip_path, 'mid_row_graph.png'))
-
-

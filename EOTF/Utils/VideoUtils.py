@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import ImageUtils
 
 
 def read_frames(input_clip: str, grayscale: bool = True) -> list:
@@ -34,7 +35,15 @@ def rescale(frames, target_min, target_max, target_type):
     # frames = list of numpy matrices
     min_val = np.min(frames)
     max_val = np.max(frames)
-    return [(target_min + (target_max - target_min) * (i - min_val) / (max_val - min_val)).astype(target_type) for i in frames]
+    if max_val == 0:
+        return [np.zeros_like(f).astype(target_type) for f in frames]
+    return [(target_min + (target_max - target_min) * (f - min_val) / (max_val - min_val)).astype(target_type) for f in frames]
+
+
+def float_to_int(frames):
+    # assuming frames is in range 0-1
+    frames = [(f*256).astype('uint8') for f in frames]
+    return frames
 
 
 def length(frames):
@@ -51,3 +60,10 @@ def height(frames):
 
 def mean_per_frame(frames):
     return [np.mean(frames[i]) for i in range(length(frames))]
+
+
+def total_variation_video(frames):
+    s = 0
+    for i in range(length(frames)):
+        s = s + ImageUtils.total_variation(frames[i])
+    return s
