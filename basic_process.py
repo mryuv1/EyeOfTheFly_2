@@ -75,7 +75,7 @@ def results_path(clip_path, file_name = ''):
     return res + file_name
 
 
-clip_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\animations\left\left_speed_1.gif'
+clip_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\complex_movement.gif'
 clip_file_name = os.path.splitext(clip_path)[0]
 frames = VideoUtils.read_frames(clip_path)
 
@@ -85,7 +85,7 @@ photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
 frames = photoreceptor.receive(frames)  # A list of frames
 
 # Calculate EMD responses for entire frame and save as a gif
-emd_result = EMD.forward_video(frames, EMD.TEMPLATE_FOURIER, axis=0, center=1)
+emd_result = EMD.forward_video(frames, EMD.TEMPLATE_FOURIER, axis=1, center=0)
 imageio.mimsave(results_path(clip_path, 'emd_results_test.gif'), VideoUtils.rescale(emd_result, 0, 255, np.uint8))
 
 exit()

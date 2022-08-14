@@ -1,4 +1,6 @@
 import cv2
+import numpy as np
+
 
 def total_variation(frame):
     gx = cv2.Sobel(frame, cv2.CV_64F, 1, 0)

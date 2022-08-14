@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import ImageUtils
+import EOTF.Utils.ImageUtils as ImageUtils
 
 
 def read_frames(input_clip: str, grayscale: bool = True) -> list:
