@@ -2,7 +2,7 @@ import os
 import cv2
 import EOTF.PhotoreceptorImageConverter as PhotoreceptorImageConverter
 import EOTF.EMD as EMD
-import EOTF.Utils.VideoUtils as VideoUtils
+import EOTF.Utils.video_utils as VideoUtils
 import numpy as np
 from matplotlib import pyplot as plt, cm
 from matplotlib.ticker import LinearLocator
@@ -75,10 +75,12 @@ def results_path(clip_path, file_name = ''):
     return res + file_name
 
 
+# Upload frames
 clip_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\complex_movement.gif'
 clip_file_name = os.path.splitext(clip_path)[0]
 frames = VideoUtils.read_frames(clip_path)
 
+# Convert frames to a photoreceptor image (in practice, down sample it)
 photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
     PhotoreceptorImageConverter.make_gaussian_kernel(15),
     frames[0].shape, 6000)

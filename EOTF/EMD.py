@@ -1,5 +1,5 @@
 import numpy as np
-import EOTF.Utils.VideoUtils as VideoUtils
+import EOTF.Utils.video_utils as VideoUtils
 import cv2
 
 TEMPLATE_FOURIER = np.array([[1, 0], [0, 1]])
@@ -108,7 +108,7 @@ def forward_col(frames, c, template):
     return result
 
 
-def forward_video(frames, template, axis=0, center=False):
+def forward_video(frames, template, axis=0, center=False, normalize=False):
     """
     Calculates EMD response for an entire video.
     :param frames: A list of frames, each one is an np matrix
@@ -123,11 +123,12 @@ def forward_video(frames, template, axis=0, center=False):
 
     result = []
     if axis == 0:
-        for r in range(VideoUtils.height(frames)):
+        for r in range(frames[0].shape[0]):
             result.append(forward_row(frames, r, template))
         result = list(np.transpose(np.array(result), (2, 0, 1)))
     else:
-        for c in range(VideoUtils.width(frames)):
+        for c in range(frames[0].shape[1]):
             result.append(forward_col(frames, c, template))
         result = list(np.transpose(np.array(result), (2, 1, 0)))
     return result
+
