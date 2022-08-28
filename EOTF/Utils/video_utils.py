@@ -1,4 +1,5 @@
 import cv2
+import imageio
 import numpy as np
 import EOTF.Utils.image_utils as ImageUtils
 
@@ -69,9 +70,15 @@ def total_variation_video(frames):
     return s
 
 
-def randomize(frames):
+def shuffle(frames):
     frames1 = np.reshape(frames, -1)
     np.random.shuffle(frames1)
     frames1 = np.reshape(frames1, (len(frames),) + frames[0].shape)
     frames1 = list(frames1)
     return frames1
+
+
+def save_gif(frames, name, path = '', strech = False):
+    if strech:
+        frames = rescale(frames, 0, 255, np.uint8)
+    imageio.mimsave(path + name, frames)

@@ -29,7 +29,7 @@ def forward_x(frames, r, c, t, template):
         """
         Calculate RawCorr from (Nitzany 2014)
         """
-        if (t + template.shape[0] >= VideoUtils.length(frames)) or (c + template.shape[1] >= VideoUtils.width(frames)):
+        if (t + template.shape[0] - 1 >= VideoUtils.length(frames)) or (c + template.shape[1] - 1 >= VideoUtils.width(frames)):
             return 0
         result = 1
         for xi in range(template.shape[1]):
@@ -41,8 +41,11 @@ def forward_x(frames, r, c, t, template):
     template_x = np.flip(template, axis=1)
     template_t = np.flip(template, axis=0)
     template_xt = np.flip(np.flip(template, axis=1), axis=0)
-    return (forward_raw(frames, c, r, t, template) - forward_raw(frames, c, r, t, template_x)) \
+    local_motion = (forward_raw(frames, c, r, t, template) - forward_raw(frames, c, r, t, template_x)) \
            - (forward_raw(frames, c, r, t, template_t) - forward_raw(frames, c, r, t, template_xt))
+    if (template==template_xt).all():
+        local_motion /= 2
+    return local_motion
 
 
 def forward_y(frames, r, c, t, template):
