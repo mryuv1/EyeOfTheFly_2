@@ -6,6 +6,10 @@ Also note the function calc_results_score, this function takes a video of local 
 Change it however you want.
 """
 
+# FLAGS
+save_gifs = True
+override_saved_date = True
+
 import EOTF.PhotoreceptorImageConverter as PhotoreceptorImageConverter
 import EOTF.EMD as EMD
 import EOTF.Utils.video_utils as video_utils
@@ -45,9 +49,10 @@ def get_paths_and_names():
     return gifs_paths, gifs_names
     """
 
+    base_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\RealInputClips2\Pillar(A)\all_videos'
     base_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\animations_2'
     files = os.listdir(base_path)
-    files = [f for f in files if '.gif' in f] # keep only gifs
+    files = [f for f in files if ('.mp4' in f) or ('.gif' in f)] # keep only gifs
     files_names = [os.path.splitext(f)[0] for f in files]
     files_paths = [base_path + '\\' + f for f in files]
     return files_paths, files_names
@@ -66,9 +71,9 @@ def calc_results_score(local_motion, local_motion_rand, seperate_pos_neg=True):
         # 2. Moving Variance
         #return np.mean(image_utils.moving_variance(local_motion, (3, 3)))
         # 3. Total Variation
-        #return image_utils.total_variation(local_motion)
+        return image_utils.total_variation(local_motion)
 
-    def calc_results_score_internal(local_motion):
+    def calc_results_score_internal(local_motion,local_motion_rand):
         res = 0
         for i in range(len(local_motion)):
             top = unnormalized_frame_score(local_motion[i])
@@ -84,6 +89,8 @@ def calc_results_score(local_motion, local_motion_rand, seperate_pos_neg=True):
         res = res / len(local_motion)
         return res
 
+    return calc_results_score_internal(local_motion,local_motion_rand)
+
     pos = [np.maximum(frame,0) for frame in local_motion]
     pos_rand = [np.maximum(frame,0) for frame in local_motion_rand]
     pos_res = calc_results_score_internal(pos, pos_rand)
@@ -92,15 +99,16 @@ def calc_results_score(local_motion, local_motion_rand, seperate_pos_neg=True):
     neg_res = calc_results_score_internal(neg, neg_rand)
     return pos_res - neg_res
 
-# FLAGS
-save_gifs = True
-override_saved_date = True
 
 # Some initializations
-templates_list = [EMD.TEMPLATE_FOURIER, EMD.TEMPLATE_GLIDER, EMD.TEMPLATE_SPATIAL, EMD.TEMPLATE_TEMPORAL]
-templates_names = ["Fourier", "Glider", "Spatial", "Temporal"]
-#templates_list = [EMD.TEMPLATE_FOURIER, EMD.TEMPLATE_GLIDER]
-#templates_names = ["Fourier", "Glider"]
+#templates_list = [EMD.TEMPLATE_FOURIER, EMD.TEMPLATE_GLIDER, EMD.TEMPLATE_SPATIAL, EMD.TEMPLATE_TEMPORAL]
+#templates_names = ["Fourier", "Glider", "Spatial", "Temporal"]
+templates_list = [EMD.TEMPLATE_FOURIER, EMD.TEMPLATE_GLIDER]
+templates_names = ["Fourier", "Glider"]
+#templates_list = [EMD.TEMPLATE_FOURIER_1, EMD.TEMPLATE_FOURIER_2, EMD.TEMPLATE_FOURIER_3,
+#                  EMD.TEMPLATE_FOURIER_05, EMD.TEMPLATE_FOURIER_03, EMD.TEMPLATE_GLIDER]
+#templates_names = ["Fourier 1", "Fourier 2", "Fourier 3", "Fourier 05", "Fourier 03", "Glider"]
+
 gifs_paths, gifs_names = get_paths_and_names()
 results = {}
 
@@ -162,6 +170,12 @@ for i in range(len(gifs_names)):
         # Add to dictionary
         res = calc_results_score(local_motion, local_motion_rand)
         results[name][template_name + '_X'] = res
+        # Save GIF
+        if save_gifs:
+            local_motion_gif_path = file_utils.results_path(path, template_name + '_X.gif')
+            if override_saved_date or ~os.path.isfile(local_motion_gif_path):
+                local_motion_int = [((f+1)*256/2).astype('uint8') for f in local_motion]
+                video_utils.save_gif(local_motion_int, local_motion_gif_path)
 
         # ---- Y AXIS ----
         # Load or calculate local motion
@@ -181,6 +195,12 @@ for i in range(len(gifs_names)):
         # Add to dictionary
         res = calc_results_score(local_motion, local_motion_rand)
         results[name][template_name + '_Y'] = res
+        # Save GIF
+        if save_gifs:
+            local_motion_gif_path = file_utils.results_path(path, template_name + '_Y.gif')
+            if override_saved_date or ~os.path.isfile(local_motion_gif_path):
+                local_motion_int = [((f+1)*256/2).astype('uint8') for f in local_motion]
+                video_utils.save_gif(local_motion_int, local_motion_gif_path)
 
         print('Calculated ' + template_name)
 

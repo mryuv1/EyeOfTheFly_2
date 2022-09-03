@@ -3,10 +3,15 @@ import EOTF.Utils.video_utils as VideoUtils
 import cv2
 
 TEMPLATE_FOURIER = np.array([[1, 0], [0, 1]])
-TEMPLATE_SPATIAL = np.array([[1, 1, 0], [0, 1, 1]])
-TEMPLATE_TEMPORAL = np.array([[1, 0], [1, 1], [0, 1]])
+TEMPLATE_FOURIER_2 = np.array([[1, 0, 0], [0, 0, 1]])
+TEMPLATE_FOURIER_3 = np.array([[1, 0, 0, 0], [0, 0, 0, 1]])
+TEMPLATE_FOURIER_05 = np.array([[1, 0], [0, 0], [0, 1]])
+TEMPLATE_FOURIER_03 = np.array([[1, 0], [0, 0], [0, 0], [0, 1]])
+
 TEMPLATE_GLIDER = np.array([[1, 1], [0, 1]])
 
+TEMPLATE_SPATIAL = np.array([[1, 1, 0], [0, 1, 1]])
+TEMPLATE_TEMPORAL = np.array([[1, 0], [1, 1], [0, 1]])
 
 def forward(frames, r, c, t, template, axis=0):
     if axis == 0:
