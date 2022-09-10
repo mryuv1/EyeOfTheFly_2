@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import StepLR
 
 from utils_for_DL import create_data_tuple
 
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -53,29 +54,31 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+                epoch, batch_idx * len(data), len(train_loader),
+                       100. * batch_idx / len(train_loader), loss.item()))
             if args.dry_run:
                 break
 
 
-def test(model, device, test_loader):
+def test(model, device, test_loader, transform):
     model.eval()
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for data, target in test_loader:
+        for (data, target) in list(test_loader.values()):
+            data, target = data[0], target[0]
+            data, target = transform(data), transform(target)
+            data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+            loss = nn.MSELoss()
+            loss = loss(output, torch.flatten(target, 1))
+            test_loss += loss  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
 
-    test_loss /= len(test_loader.dataset)
+    test_loss /= len(test_loader)
+    print(f'The test loss is: {test_loss}')
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
 
 
 def main():
@@ -117,10 +120,10 @@ def main():
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
-    transform=transforms.Compose([
+    transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
-        ])
+    ])
 
     model = Net().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
@@ -130,7 +133,7 @@ def main():
         train(args, model, device, dataset_dict, optimizer, epoch, transform=transform)  # dataset_dict
 
         # TODO: need to fix the line below with normal test_set
-        test(model, device, test_loader)
+        test(model, device, dataset_dict, transform=transform)
         scheduler.step()
 
     if args.save_model:
@@ -139,6 +142,7 @@ def main():
 
 if __name__ == '__main__':
     import os
+
     general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
-    dataset_dict = create_data_tuple(general_DS_folser, desiered_dim=(220, 120))
+    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=(220, 120))
     main()
