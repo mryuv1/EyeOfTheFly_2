@@ -132,7 +132,6 @@ def main():
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, dataset_dict, optimizer, epoch, transform=transform)  # dataset_dict
 
-        # TODO: need to fix the line below with normal test_set
         test(model, device, dataset_dict, transform=transform)
         scheduler.step()
 
@@ -142,7 +141,10 @@ def main():
 
 if __name__ == '__main__':
     import os
-
+    # If you want to run it you need to extract the dataset from the zip
     general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
+
+    # The dataset format is:
+    # {'name_of_video', raw jpegs, segmented data}
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=(220, 120))
     main()
