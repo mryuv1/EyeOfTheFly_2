@@ -13,7 +13,7 @@ from utils_for_DL import create_data_tuple
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, 3, 3)
+        self.conv1 = nn.Conv2d(1, 16, 3, 3)  # format: (in_channels, out_channels, kermel_size, stride)
         self.conv2 = nn.Conv2d(16, 32, 3, 3)
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
@@ -148,3 +148,10 @@ if __name__ == '__main__':
     # {'name_of_video', raw jpegs, segmented data}
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=(220, 120))
     main()
+
+    """
+    Things that we need to talk about:
+    1. what is the resolution that we put in the net.
+    2. how many channels.
+    3. should we start with a segmentaion of a single frame or to start directly with couple of frames.
+    """

@@ -38,10 +38,30 @@ def create_data_tuple(dir, number_of_videos=5, desiered_dim=None) -> dict:
 if __name__ == '__main__':
     general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
 
-    dataset_dict = create_data_tuple(general_DS_folser, desiered_dim=(220, 120))
+    dataset_dict = create_data_tuple(general_DS_folser, desiered_dim=(800, 500))
     print(dataset_dict.keys())
 
     plt.imshow(dataset_dict['bear'][0][2], cmap='gray')
     new_dim = (dataset_dict['bear'][0][2].shape[1]//4, dataset_dict['bear'][0][2].shape[0]//4)
     resized = cv2.resize(dataset_dict['bear'][0][2], new_dim)
     plt.imshow(resized, cmap='gray')
+    plt.show()
+
+    plt.imshow(dataset_dict['bear'][1][2], cmap='gray')
+    new_dim = (dataset_dict['bear'][1][2].shape[1]//4, dataset_dict['bear'][0][2].shape[0]//4)
+    resized = cv2.resize(dataset_dict['bear'][1][2], new_dim)
+    plt.imshow(resized, cmap='gray')
+    plt.show()
+
+    plt.imshow(dataset_dict['bmx-trees'][0][2], cmap='gray')
+    new_dim = (dataset_dict['bmx-trees'][0][2].shape[1]//4, dataset_dict['bmx-trees'][0][2].shape[0]//4)
+    resized = cv2.resize(dataset_dict['bmx-trees'][0][2], new_dim)
+    plt.imshow(resized, cmap='gray')
+    plt.show()
+
+    plt.imshow(dataset_dict['bmx-trees'][1][2], cmap='gray')
+    new_dim = (dataset_dict['bmx-trees'][1][2].shape[1]//4, dataset_dict['bmx-trees'][0][2].shape[0]//4)
+    resized = cv2.resize(dataset_dict['bmx-trees'][1][2], new_dim)
+    plt.imshow(resized, cmap='gray')
+    plt.show()
+    print("check in the unils_for_DL file")
