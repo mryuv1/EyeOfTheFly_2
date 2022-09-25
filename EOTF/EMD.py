@@ -1,25 +1,28 @@
 import numpy as np
-import EOTF.Utils.video_utils as VideoUtils
-import cv2
 
 TEMPLATE_FOURIER = np.array([[1, 0], [0, 1]])
-TEMPLATE_FOURIER_2 = np.array([[1, 0, 0], [0, 0, 1]])
-TEMPLATE_FOURIER_3 = np.array([[1, 0, 0, 0], [0, 0, 0, 1]])
-TEMPLATE_FOURIER_05 = np.array([[1, 0], [0, 0], [0, 1]])
-TEMPLATE_FOURIER_03 = np.array([[1, 0], [0, 0], [0, 0], [0, 1]])
-
-TEMPLATE_GLIDER = np.array([[1, 1], [0, 1]])
-
+TEMPLATE_GLIDER = np.array([[1, 1], [1, 0]])
 TEMPLATE_SPATIAL = np.array([[1, 1, 0], [0, 1, 1]])
 TEMPLATE_TEMPORAL = np.array([[1, 0], [1, 1], [0, 1]])
 
 def forward(frames, r, c, t, template, axis=0):
     if axis == 0:
-        return forward_x(frames, r, c, t, template)
-    return forward_y(frames, r, c, t, template)
+        return _forward_x(frames, r, c, t, template)
+    return _forward_y(frames, r, c, t, template)
 
-
-def forward_x(frames, r, c, t, template):
+def _forward_raw_x(frames, c, r, t, template):
+    """
+    Calculate RawCorr from (Nitzany 2014)
+    """
+    if (t + template.shape[0] - 1 >= len(frames)) or (c + template.shape[1] - 1 >= frames[0].shape[1]):
+        return 0
+    result = 1
+    for xi in range(template.shape[1]):
+        for ti in range(template.shape[0]):
+            if template[ti, xi]:
+                result *= frames[t + ti][r, c + xi]
+    return result
+def _forward_x(frames, r, c, t, template):
     """
     Calculates EMD response for a single pixel in a single frame
     :param frames: A list of frames, each one is an np matrix
@@ -30,30 +33,26 @@ def forward_x(frames, r, c, t, template):
     :return: EMD response
     """
 
-    def forward_raw(frames, c, r, t, template, axis=0):
-        """
-        Calculate RawCorr from (Nitzany 2014)
-        """
-        if (t + template.shape[0] - 1 >= VideoUtils.length(frames)) or (c + template.shape[1] - 1 >= VideoUtils.width(frames)):
-            return 0
-        result = 1
-        for xi in range(template.shape[1]):
-            for ti in range(template.shape[0]):
-                if template[ti, xi]:
-                    result *= frames[t + ti][r, c + xi]
-        return result
-
     template_x = np.flip(template, axis=1)
     template_t = np.flip(template, axis=0)
     template_xt = np.flip(np.flip(template, axis=1), axis=0)
-    local_motion = (forward_raw(frames, c, r, t, template) - forward_raw(frames, c, r, t, template_x)) \
-           - (forward_raw(frames, c, r, t, template_t) - forward_raw(frames, c, r, t, template_xt))
-    if (template==template_xt).all():
-        local_motion /= 2
+    local_motion = (_forward_raw_x(frames, c, r, t, template) - _forward_raw_x(frames, c, r, t, template_x)) \
+           - (_forward_raw_x(frames, c, r, t, template_t) - _forward_raw_x(frames, c, r, t, template_xt))
     return local_motion
 
-
-def forward_y(frames, r, c, t, template):
+def _forward_raw_y(frames, c, r, t, template, axis=0):
+    """
+    Calculate RawCorr from (Nitzany 2014)
+    """
+    if (t + template.shape[0] >= len(frames)) or (r + template.shape[1] >= frames[0].shape[0]):
+        return 0
+    result = 1
+    for xi in range(template.shape[1]):
+        for ti in range(template.shape[0]):
+            if template[ti, xi]:
+                result *= frames[t + ti][r + xi, c]
+    return result
+def _forward_y(frames, r, c, t, template):
     """
     Calculates EMD response for a single pixel in a single frame
     :param frames: A list of frames, each one is an np matrix
@@ -64,25 +63,11 @@ def forward_y(frames, r, c, t, template):
     :return: EMD response
     """
 
-    def forward_raw(frames, c, r, t, template, axis=0):
-        """
-        Calculate RawCorr from (Nitzany 2014)
-        """
-        if (t + template.shape[0] >= VideoUtils.length(frames)) or (r + template.shape[1] >= VideoUtils.height(frames)):
-            return 0
-        result = 1
-        for xi in range(template.shape[1]):
-            for ti in range(template.shape[0]):
-                if template[ti, xi]:
-                    result *= frames[t + ti][r + xi, c]
-        return result
-
     template_x = np.flip(template, axis=1)
     template_t = np.flip(template, axis=0)
     template_xt = np.flip(np.flip(template, axis=1), axis=0)
-    return (forward_raw(frames, c, r, t, template) - forward_raw(frames, c, r, t, template_x)) \
-           - (forward_raw(frames, c, r, t, template_t) - forward_raw(frames, c, r, t, template_xt))
-
+    return (_forward_raw_y(frames, c, r, t, template) - _forward_raw_y(frames, c, r, t, template_x)) \
+           - (_forward_raw_y(frames, c, r, t, template_t) - _forward_raw_y(frames, c, r, t, template_xt))
 
 def forward_row(frames, r, template):
     """
@@ -94,10 +79,10 @@ def forward_row(frames, r, template):
     :return: A matrix of EMD responses. First axis is spacial, second is temporal.
     """
 
-    result = np.zeros((frames[0].shape[1], len(frames)))
+    result = np.zeros((frames[0].shape[1], len(frames)-1))
     for c in range(result.shape[0]):
         for t in range(result.shape[1]):
-            result[c, t] = forward_x(frames, r, c, t, template)
+            result[c, t] = _forward_x(frames, r, c, t, template)
     return result
 
 
@@ -109,14 +94,14 @@ def forward_col(frames, c, template):
     :param template: As explained in (Nitzany 2014). First axis temporal, second axis spacial.
     :return: A matrix of EMD responses. First axis is spacial, second is temporal.
     """
-    result = np.zeros((frames[0].shape[0], len(frames)))
+    result = np.zeros((frames[0].shape[0], len(frames)-1))
     for r in range(result.shape[0]):
         for t in range(result.shape[1]):
-            result[r, t] = forward_y(frames, r, c, t, template)
+            result[r, t] = _forward_y(frames, r, c, t, template)
     return result
 
 
-def forward_video(frames, template, axis=0, center=False, normalize=False):
+def forward_video(frames, template, axis=0):
     """
     Calculates EMD response for an entire video.
     :param frames: A list of frames, each one is an np matrix

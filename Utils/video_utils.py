@@ -1,7 +1,7 @@
 import cv2
 import imageio
 import numpy as np
-import EOTF.Utils.image_utils as ImageUtils
+import image_utils
 
 
 def read_frames(input_clip: str, grayscale: bool = True) -> list:
@@ -68,7 +68,7 @@ def mean_per_frame(frames):
 def total_variation(frames):
     s = 0
     for i in range(length(frames)):
-        s = s + ImageUtils.total_variation(frames[i])
+        s = s + image_utils.total_variation(frames[i])
     return s
 
 
@@ -84,6 +84,7 @@ def save_gif(frames, name, path = '', strech = False):
     if strech:
         frames = rescale(frames, 0, 255, np.uint8)
     imageio.mimsave(path + name, frames)
+
 
 def change_speed(frames, factor):
     return [frames[round(i)] for i in range(0, len(frames), factor)]
