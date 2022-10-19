@@ -126,7 +126,7 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
     print('Converted to photoreceptor: ' + repr(time.perf_counter() - start_time))
 
     # Preprocess frame
-    #frames = preprocess_frames(frames)
+    frames = preprocess_frames(frames)
     if save_gifs:
         preprocessed_gif_name = writing_results_utils.results_path(path, 'preprocessed.gif')
         video_utils.save_gif(frames, preprocessed_gif_name, strech=True)
