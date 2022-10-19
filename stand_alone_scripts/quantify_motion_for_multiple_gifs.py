@@ -6,24 +6,22 @@ Also note the function calc_results_score, this function takes a video of local 
 Change it however you want.
 """
 
-import csv
 import os
 import pickle
 import time
 
 import numpy as np
 
-import old_videos_name_parser
 from EOTF import EMD, PhotoreceptorImageConverter
-from Utils import video_utils
+from Utils import video_utils, old_videos_name_parser
 import writing_results_utils
-
-# FLAGS
 from stand_alone_scripts import create_animations
 
-save_gifs = False
-override_saved_data = False
-override_photoreceptor_converted = False
+# FLAGS
+
+save_gifs = True
+override_local_motion = True
+override_photoreceptor_converted = True
 
 # Initializations
 #templates_list = [EMD.TEMPLATE_FOURIER, EMD.TEMPLATE_GLIDER, EMD.TEMPLATE_SPATIAL, EMD.TEMPLATE_TEMPORAL]
@@ -59,7 +57,7 @@ def get_paths_and_names():
 
     #base_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\RealInputClips2\Pillar(A)\all_videos'
     base_path = os.path.join(os.getcwd(),'data','animations_2')
-    #base_path = os.path.join(os.getcwd(),'data','nature_images','gifs')
+    base_path = os.path.join(os.getcwd(),'data','nature_images','gifs')
     files = os.listdir(base_path)
     files = [f for f in files if ('.mp4' in f) or ('.gif' in f)] # keep only gifs
     files_names = [os.path.splitext(f)[0] for f in files]
@@ -88,8 +86,7 @@ def calc_results_score(local_motion, local_motion_rand):
     return res
 
 def preprocess_frames(frames):
-    threshold = np.mean(frames)
-    frames = [(f > threshold).astype(int) for f in frames]
+    frames = [(f > np.mean(f)).astype(int) for f in frames]
     return frames
 
 def _frame_score(lm_frame:np.array):
@@ -115,10 +112,11 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
         frames = pickle.load(open(frames_saved_path, 'rb'))
     else:
         frames = video_utils.read_frames(path)
-        photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
-            PhotoreceptorImageConverter.make_gaussian_kernel(15),
-            frames[0].shape, 6000)
-        frames = photoreceptor.receive(frames)
+        if frames[0].shape[0]*frames[0].shape[1] > 6000:
+            photoreceptor = PhotoreceptorImageConverter.PhotoreceptorImageConverter(
+                PhotoreceptorImageConverter.make_gaussian_kernel(15),
+                frames[0].shape, 6000)
+            frames = photoreceptor.receive(frames)
         pickle.dump(frames, open(frames_saved_path, 'wb'))
         # Save photoreceptor gif
         if save_gifs:
@@ -128,7 +126,7 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
     print('Converted to photoreceptor: ' + repr(time.perf_counter() - start_time))
 
     # Preprocess frame
-    frames = preprocess_frames(frames)
+    #frames = preprocess_frames(frames)
     if save_gifs:
         preprocessed_gif_name = writing_results_utils.results_path(path, 'preprocessed.gif')
         video_utils.save_gif(frames, preprocessed_gif_name, strech=True)
@@ -150,14 +148,14 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
         # ---- X AXIS ----
         # Load or calculate local motion
         local_motion_saved_path = writing_results_utils.results_path(path, template_name + '_X.pkl')
-        if os.path.isfile(local_motion_saved_path) and not override_saved_data:
+        if os.path.isfile(local_motion_saved_path) and not override_local_motion:
             local_motion = pickle.load(open(local_motion_saved_path,'rb'))
         else:
             local_motion = EMD.forward_video(frames, template, axis=0)
             pickle.dump(local_motion, open(local_motion_saved_path,'wb'))
         # Load or calculate random local motion (for normalization)
         rand_local_motion_saved_path = writing_results_utils.results_path(path, template_name + '_X_rand.pkl')
-        if os.path.isfile(rand_local_motion_saved_path) and not override_saved_data:
+        if os.path.isfile(rand_local_motion_saved_path) and not override_local_motion:
             local_motion_rand = pickle.load(open(rand_local_motion_saved_path, 'rb'))
         else:
             local_motion_rand = EMD.forward_video(frames_rand, template, axis=0)
@@ -168,21 +166,21 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
         # Save GIF
         if save_gifs:
             local_motion_gif_path = writing_results_utils.results_path(path, template_name + '_X.gif')
-            if override_saved_data or ~os.path.isfile(local_motion_gif_path):
-                local_motion_int = [((f+1)*256/2).astype('uint8') for f in local_motion]
+            if override_local_motion or ~os.path.isfile(local_motion_gif_path):
+                local_motion_int = [((f/f.max()+1)*256/2).astype('uint8') for f in local_motion]
                 video_utils.save_gif(local_motion_int, local_motion_gif_path)
-        """
+
         # ---- Y AXIS ----
         # Load or calculate local motion
-        local_motion_saved_path = file_utils.results_path(path, template_name + '_Y.pkl')
-        if os.path.isfile(local_motion_saved_path) and not override_saved_data:
+        local_motion_saved_path = writing_results_utils.results_path(path, template_name + '_Y.pkl')
+        if os.path.isfile(local_motion_saved_path) and not override_local_motion:
             local_motion = pickle.load(open(local_motion_saved_path,'rb'))
         else:
             local_motion = EMD.forward_video(frames, template, axis=1)
             pickle.dump(local_motion, open(local_motion_saved_path,'wb'))
         # Load or calculate random local motion (for normalization)
-        rand_local_motion_saved_path = file_utils.results_path(path, template_name + '_Y_rand.pkl')
-        if os.path.isfile(rand_local_motion_saved_path) and not override_saved_data:
+        rand_local_motion_saved_path = writing_results_utils.results_path(path, template_name + '_Y_rand.pkl')
+        if os.path.isfile(rand_local_motion_saved_path) and not override_local_motion:
             local_motion_rand = pickle.load(open(rand_local_motion_saved_path, 'rb'))
         else:
             local_motion_rand = EMD.forward_video(frames_rand, template, axis=1)
@@ -192,11 +190,11 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
         results[name][template_name + '_Y'] = res
         # Save GIF
         if save_gifs:
-            local_motion_gif_path = file_utils.results_path(path, template_name + '_Y.gif')
-            if override_saved_data or ~os.path.isfile(local_motion_gif_path):
-                local_motion_int = [((f+1)*256/2).astype('uint8') for f in local_motion]
+            local_motion_gif_path = writing_results_utils.results_path(path, template_name + '_Y.gif')
+            if override_local_motion or ~os.path.isfile(local_motion_gif_path):
+                local_motion_int = [((f/f.max()+1)*256/2).astype('uint8') for f in local_motion]
                 video_utils.save_gif(local_motion_int, local_motion_gif_path)
-        """
+
         print('Calculated ' + template_name)
 
     print('Finished: ' + repr(time.perf_counter() - start_time) + ' seconds')
@@ -204,14 +202,13 @@ for i, (name, path) in enumerate(zip(gifs_names, gifs_paths)):
 print()
 
 # ------ WRITE TO FILE ------
-
 # Change dictionary structure to fit 'write_dict_to_csv' function
 results_new = {'Name': list(results.keys())}
 for field_key in results[results_new['Name'][0]].keys():
     results_new[field_key] = [results[vid_key][field_key] for vid_key in results.keys()]
 # Create file name: 'test_result' + date + running index
-i = 1
 base_results_file_name = 'quantify_motion_results\\test_results_' + time.strftime('%y%m%d') + '_'
+i = 1
 while os.path.isfile(base_results_file_name + str(i) + '.csv'):
     i = i+1
 results_file_name = base_results_file_name + str(i) + '.csv'

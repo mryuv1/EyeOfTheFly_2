@@ -44,7 +44,7 @@ def _forward_raw_y(frames, c, r, t, template, axis=0):
     """
     Calculate RawCorr from (Nitzany 2014)
     """
-    if (t + template.shape[0] >= len(frames)) or (r + template.shape[1] >= frames[0].shape[0]):
+    if (t + template.shape[0] - 1 >= len(frames)) or (r + template.shape[1] - 1 >= frames[0].shape[0]):
         return 0
     result = 1
     for xi in range(template.shape[1]):
@@ -110,9 +110,6 @@ def forward_video(frames, template, axis=0):
     :return: A new video (as a list of frames) of EMD responses.
     :param center: Whether of not subtract the mean value of each frame
     """
-
-    if center:
-        frames = [f - np.mean(f) for f in frames]
 
     result = []
     if axis == 0:

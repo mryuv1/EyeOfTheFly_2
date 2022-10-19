@@ -1,12 +1,12 @@
 import cv2 as cv
 import os
 import video_utils
-from EOTF import PhotoreceptorImageConverter
 
-def create_left_animation(frame, length=15, speed=1, new_size = None):
+def create_left_animation(frame, length=15, speed=1, new_size = None, small_size = None):
+    if small_size is None:
+        small_size = [round(frame.shape[0]/2), round(frame.shape[1]/2)]
     if new_size is None:
-        new_size = [frame.shape[1], frame.shape[0]]
-    small_size = [round(frame.shape[0]/2), round(frame.shape[1]/2)]
+        new_size = small_size
     col_start = round(frame.shape[1] / 2 - small_size[1] / 2)
     col_end = round(frame.shape[1] / 2 + small_size[1] / 2)
     row_start = round(frame.shape[0] / 2 - small_size[0] / 2)
@@ -20,14 +20,15 @@ def create_left_animation(frame, length=15, speed=1, new_size = None):
     ]
     return new_frames
 
-def create_down_animation(frame, length=15, speed=1, new_size = None):
+def create_down_animation(frame, length=15, speed=1, new_size = None, small_size = None):
+    if small_size is None:
+        small_size = [round(frame.shape[0]/2), round(frame.shape[1]/2)]
     if new_size is None:
-        new_size = [frame.shape[1], frame.shape[0]]
-    small_size = [round(frame.shape[0]/2), round(frame.shape[1]/2)]
-    col_start = round(frame.shape[1]/2 - small_size[1]/2)
-    col_end = round(frame.shape[1]/2 + small_size[1]/2)
-    row_start = round(frame.shape[0]/2 - small_size[0]/2)
-    row_end = round(frame.shape[0]/2 + small_size[0]/2)
+        new_size = small_size
+    col_start = round(frame.shape[1] / 2 - small_size[1] / 2)
+    col_end = round(frame.shape[1] / 2 + small_size[1] / 2)
+    row_start = round(frame.shape[0] / 2 - small_size[0] / 2)
+    row_end = round(frame.shape[0] / 2 + small_size[0] / 2)
     new_frames = [
         cv.resize(
             frame[(row_start + i * speed):(row_end + i * speed), col_start:col_end],
@@ -47,10 +48,11 @@ def create_up_animation(frame, length=15, speed=1, new_size=None):
     r.reverse()
     return r
 
-def create_zoomin_animation(frame, length=15, speed=1, new_size=None):
+def create_zoomin_animation(frame, length=15, speed=1, new_size = None, small_size = None):
+    if small_size is None:
+        small_size = [round(frame.shape[0]/2), round(frame.shape[1]/2)]
     if new_size is None:
-        new_size = [frame.shape[1], frame.shape[0]]
-    small_size = [round(frame.shape[0]/2), round(frame.shape[1]/2)]
+        new_size = small_size
     col_start = round(frame.shape[1] / 2 - small_size[1] / 2)
     col_end = round(frame.shape[1] / 2 + small_size[1] / 2)
     row_start = round(frame.shape[0] / 2 - small_size[0] / 2)
@@ -89,7 +91,7 @@ if __name__ == '__main__':
         os.makedirs(gifs_path)
     for f,name,path in zip(files,files_names,files_paths):
         frame = cv.imread(path, cv.IMREAD_GRAYSCALE)
-        for s in [1,3,5,10,15]:
-            video_utils.save_gif(create_left_animation(frame, new_size=(400,400), speed=s), name+'_'+'left'+'_'+repr(s)+'.gif', path=gifs_path)
-            video_utils.save_gif(create_down_animation(frame, new_size=(400,400), speed=s), name+'_'+'down'+'_'+repr(s)+'.gif', path=gifs_path)
-            video_utils.save_gif(create_zoomin_animation(frame, new_size=(400,400), speed=s), name+'_'+'zoomin'+'_'+repr(s)+'.gif', path=gifs_path)
+        for s in [1]:
+            video_utils.save_gif(create_left_animation(frame, length=5, small_size=(40,40), speed=s), name+'_'+'left'+'_'+repr(s)+'.gif', path=gifs_path)
+            video_utils.save_gif(create_down_animation(frame, length=5, small_size=(40,40), speed=s), name+'_'+'down'+'_'+repr(s)+'.gif', path=gifs_path)
+            video_utils.save_gif(create_zoomin_animation(frame, length=5, small_size=(40,40), speed=s), name+'_'+'zoomin'+'_'+repr(s)+'.gif', path=gifs_path)

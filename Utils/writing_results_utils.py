@@ -51,6 +51,12 @@ def save_surface_plot(output_array: np.array, clip_file_name: str, output_file_n
 
 
 def write_dict_to_csv(d, file_name):
+    """
+    Writing a dictionary to a csv format
+    :param d: A dictionary, whose fields are lists *of the same length*
+    :param file_name:
+    :return:
+    """
     with open(file_name, "w", newline='') as outfile:
         writer = csv.writer(outfile)
         key_list = list(d.keys())
