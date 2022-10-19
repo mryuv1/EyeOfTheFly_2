@@ -1,12 +1,5 @@
 import os
 
-def load_or_create(path, load_func, create_func, save_func):
-    if os.path.isfile(path):
-        return load_func(path)
-    res = create_func(path)
-    save_func(path, res)
-    return res
-
 def results_path(clip_path, file_name = ''):
     """
     Creates a results directory for a given clip.
