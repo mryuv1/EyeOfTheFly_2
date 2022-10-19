@@ -13,6 +13,8 @@ from utils_for_DL import create_data_tuple
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
+from EOTF import EMD
+
 
 # setup the writer
 writer = SummaryWriter('runs')
@@ -240,19 +242,35 @@ def main(model_in_parameters=dict()):
     model = Net(**model_in_parameters).to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
 
+    # Preprocess data
+    for k in dataset_dict.keys():
+        frames_orig = dataset_dict[k][0]
+        frames_preprocessed = [
+            frames_orig[:-1],
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
+        ]
+        dataset_dict[k] = (frames_preprocessed, dataset_dict[k][1])
+
+
     data, target = list(dataset_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
+    # data, target = data.type(torch.DoubleTensor), target
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
-    data, target = data.repeat(4, 1, 1, 1), target
+    #data, target = data.repeat(4, 1, 1, 1), target # 4,9,40,40
 
     # tmp normalization:
-    data, target = data / 255, target / 255
-    data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
+    # data, target = data / 255, target / 255
+    # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
 
     writer.add_graph(model, data)
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     for epoch in range(1, args.epochs + 1):
+        writer.add_histogram("weights conv1 layer", model.conv1.weight)
+        writer.add_histogram("bias conv1 layer", model.conv1.bias)
         train(args, model, device, dataset_dict, optimizer, epoch, transform=transform)  # dataset_dict
         writer.close()
         sys.exit()
@@ -279,7 +297,8 @@ if __name__ == '__main__':
     # {'name_of_video', raw jpegs, segmented data}
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=desiered_dim,
                                      number_of_frames=9)
-    check = {'frame_dim': (4, 9, desiered_dim[0], desiered_dim[1]), 'Cout2': 16}
+
+    check = {'frame_dim': (5, 8, desiered_dim[0], desiered_dim[1]), 'Cout2': 16}
 
     # TODO: this is the start of data loader, still we need to built all of it's attributes
     loader = CustomImageDataset(dataset_dict)
