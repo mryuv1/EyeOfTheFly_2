@@ -239,12 +239,13 @@ def main(model_in_parameters=dict()):
         transforms.Normalize((0.1307,), (0.3081,))
     ])
 
-    model = Net(**model_in_parameters).to(device)
+    model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
 
     # Preprocess data
     for k in dataset_dict.keys():
         frames_orig = dataset_dict[k][0]
+        frames_orig = [f/255 for f in frames_orig] # for the normalization
         frames_preprocessed = [
             frames_orig[:-1],
             EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
@@ -257,8 +258,8 @@ def main(model_in_parameters=dict()):
 
     data, target = list(dataset_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
-    # data, target = data.type(torch.DoubleTensor), target
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
+    data, target = data.type(torch.DoubleTensor), target
     #data, target = data.repeat(4, 1, 1, 1), target # 4,9,40,40
 
     # tmp normalization:
