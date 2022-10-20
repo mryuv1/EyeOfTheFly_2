@@ -1,6 +1,7 @@
 from __future__ import print_function
 import argparse
 import sys
+import time
 
 import torch
 import torch.nn as nn
@@ -14,10 +15,10 @@ from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
 from EOTF import EMD
-
+from datetime import datetime
 
 # setup the writer
-writer = SummaryWriter('runs')
+writer = SummaryWriter('runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
 
 
 class CustomImageDataset(Dataset):
@@ -45,7 +46,8 @@ class Net(nn.Module):
     def __init__(self, **kwargs):
         super(Net, self).__init__()
         # args that we can change:
-        self.frame_dim = kwargs.setdefault('frame_dim', (4, 9, 220, 120))
+        self.in_frame_dim = kwargs.setdefault('in_frame_dim', (4, 9, 220, 120))
+        self.out_frame_dim = kwargs.setdefault('out_frame_dim', (4, 9, 220, 120))
         self.kernel_size = kwargs.setdefault('kernel_size', 3)
 
         # for conv3d layer 1:
@@ -71,15 +73,15 @@ class Net(nn.Module):
         # calculating important dims for the network initiation:
         # the format is (D, H, W) the letter is for the layer type (c for conv) and the index for the number:
         self.d_c1 = torch.floor(
-            torch.tensor(((self.frame_dim[1] + 2 * self.padding1 - self.dilation1 * (
+            torch.tensor(((self.in_frame_dim[1] + 2 * self.padding1 - self.dilation1 * (
                     self.kernel_size - 1) - 1) / self.stride1) + 1))
 
         self.h_c1 = torch.floor(
-            torch.tensor(((self.frame_dim[2] + 2 * self.padding1 - self.dilation1 * (
+            torch.tensor(((self.in_frame_dim[2] + 2 * self.padding1 - self.dilation1 * (
                     self.kernel_size - 1) - 1) / self.stride1) + 1))
 
         self.w_c1 = torch.floor(
-            torch.tensor(((self.frame_dim[3] + 2 * self.padding1 - self.dilation1 * (
+            torch.tensor(((self.in_frame_dim[3] + 2 * self.padding1 - self.dilation1 * (
                     self.kernel_size - 1) - 1) / self.stride1) + 1))
 
         self.d_c2 = torch.floor(
@@ -102,10 +104,10 @@ class Net(nn.Module):
 
         self.linear1_input = int(self.Cout2 * self.d_mp1 * self.h_mp1 * self.w_mp1)
 
-        self.output_flatten_size = int(self.frame_dim[1] * self.frame_dim[2] * self.frame_dim[3])
+        self.output_flatten_size = int(self.out_frame_dim[1] * self.out_frame_dim[2] * self.out_frame_dim[3])
         # -----------------------------------------------------------------------------
         # the network layers:
-        self.conv1 = nn.Conv3d(self.frame_dim[0], self.Cout1, self.kernel_size, stride=self.stride1,
+        self.conv1 = nn.Conv3d(self.in_frame_dim[0], self.Cout1, self.kernel_size, stride=self.stride1,
                                padding=self.padding1,
                                dilation=self.dilation1)
         self.conv2 = nn.Conv3d(self.Cout1, self.Cout2, self.kernel_size, stride=self.stride2, padding=self.padding2,
@@ -127,7 +129,7 @@ class Net(nn.Module):
         x = F.relu(x)
         x = self.dropout2(x)
         x = self.fc2(x)
-        output = x
+        output = torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         return output
 
 
@@ -136,7 +138,7 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     print(
         '\033[96m' + f'This current option is for 2 kernels of Fourier (x,y) '
-                     f'and 2 in Glider.\nEach frame is ({check["frame_dim"][2]}, {check["frame_dim"][3]}).\n' + '\033[0m')
+                     f'and 2 in Glider.\nEach frame is ({input_dict["in_frame_dim"][2]}, {input_dict["in_frame_dim"][3]}).\n' + '\033[0m')
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     running_loss = 0.0
     for batch_idx, (data, target) in enumerate(list(train_loader.values())):
@@ -145,16 +147,13 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
         #       This current option is for 2 kernels of Fourier (x, y) and 2 in Glider
         data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
         data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
-        data, target = data.repeat(4, 1, 1, 1), target
+        data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
 
-        # tmp normalization:
-        data, target = data / 255, target / 255
-        data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
         # ----------------------------------------------------------------------------------------------------------#
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = nn.MSELoss()
+        loss = nn.L1Loss()
         loss = loss(output, torch.flatten(target, 1))
         loss.backward()
         optimizer.step()
@@ -170,7 +169,7 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
                 break
 
 
-def test(model, device, test_loader, transform):
+def net_test(model, device, test_loader, transform):
     model.eval()
     test_loss = 0
     correct = 0
@@ -178,14 +177,11 @@ def test(model, device, test_loader, transform):
         for (data, target) in list(test_loader.values()):
             data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
             data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
-            data, target = data.repeat(4, 1, 1, 1), target
-
-            # tmp normalization:
-            data, target = data / 255, target / 255
-            data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
+            data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
+            data, target = data.to(device), target.to(device)
 
             output = model(data)
-            loss = nn.MSELoss()
+            loss = nn.L1Loss()
             loss = loss(output, torch.flatten(target, 1))
             test_loss += loss  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
@@ -239,12 +235,14 @@ def main(model_in_parameters=dict()):
         transforms.Normalize((0.1307,), (0.3081,))
     ])
 
-    model = Net(**model_in_parameters).to(device)
+    model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-
+    print('Before pre process')
     # Preprocess data
     for k in dataset_dict.keys():
         frames_orig = dataset_dict[k][0]
+        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
+
         frames_preprocessed = [
             frames_orig[:-1],
             EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
@@ -254,11 +252,12 @@ def main(model_in_parameters=dict()):
         ]
         dataset_dict[k] = (frames_preprocessed, dataset_dict[k][1])
 
-
+    print('After pre process')
     data, target = list(dataset_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
-    # data, target = data.type(torch.DoubleTensor), target
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
+    data, target = data.type(torch.DoubleTensor), target
+    data, target = data.to(device), target.to(device)
     #data, target = data.repeat(4, 1, 1, 1), target # 4,9,40,40
 
     # tmp normalization:
@@ -266,20 +265,20 @@ def main(model_in_parameters=dict()):
     # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
 
     writer.add_graph(model, data)
-
+    print('here')
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     for epoch in range(1, args.epochs + 1):
-        writer.add_histogram("weights conv1 layer", model.conv1.weight)
-        writer.add_histogram("bias conv1 layer", model.conv1.bias)
+        writer.add_histogram("weights conv1 layer", model.conv1.weight.data)
+        writer.add_histogram("bias conv1 layer", model.conv1.bias.data)
         train(args, model, device, dataset_dict, optimizer, epoch, transform=transform)  # dataset_dict
-        writer.close()
-        sys.exit()
-        test(model, device, dataset_dict, transform=transform)
+        net_test(model, device, dataset_dict, transform=transform)
         scheduler.step()
 
     if args.save_model:
         torch.save(model.state_dict(), "mnist_cnn.pt")
 
+    writer.flush()
+    writer.close()
 
 if __name__ == '__main__':
     import os
@@ -289,8 +288,8 @@ if __name__ == '__main__':
     # wandb.init(project="test-project", entity="yuvalandchen")
 
     # If you want to run it you need to extract the dataset from the zip
-    general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
-
+    # general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
+    general_DS_folser = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
     desiered_dim = (40, 40)
 
     # The dataset format is:
@@ -298,12 +297,13 @@ if __name__ == '__main__':
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=desiered_dim,
                                      number_of_frames=9)
 
-    check = {'frame_dim': (5, 8, desiered_dim[0], desiered_dim[1]), 'Cout2': 16}
+    input_dict = {'in_frame_dim': (5, 8, desiered_dim[0], desiered_dim[1]),
+             'out_frame_dim': (5, 9, desiered_dim[0], desiered_dim[1]), 'Cout2': 16}
 
     # TODO: this is the start of data loader, still we need to built all of it's attributes
     loader = CustomImageDataset(dataset_dict)
 
-    main(check)
+    main(input_dict)
 
     """
     Things that we need to talk about:

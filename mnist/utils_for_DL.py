@@ -1,6 +1,6 @@
 import cv2
 import os
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -33,6 +33,8 @@ def create_data_tuple(dir, number_of_videos=5, desiered_dim=None, number_of_fram
 
         annotation_list = read_all_pictures_in_file(annototion_vid_path, desiered_dim=desiered_dim,
                                                     number_of_frames=number_of_frames)
+        # for current use we want the segmentaion to be only 0 or 1
+        annotation_list = [np.where(frame > 0, 1, 0) for frame in annotation_list]
         JPEG_list = read_all_pictures_in_file(JPEG_path_vid_path, desiered_dim=desiered_dim,
                                               number_of_frames=number_of_frames)
 
