@@ -132,7 +132,7 @@ class Net(nn.Module):
         output = torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         return output
 
-#
+
 def train(args, model, device, train_loader, optimizer, epoch, transform):
     model.train()
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
