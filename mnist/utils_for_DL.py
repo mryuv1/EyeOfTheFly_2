@@ -41,7 +41,7 @@ def create_data_tuple(dir, number_of_videos=5, desiered_dim=None, number_of_fram
         dataset_dict[anotations_list[video_idx]] = (JPEG_list, annotation_list)
     return dataset_dict
 
-
+#
 if __name__ == '__main__':
     general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
 
