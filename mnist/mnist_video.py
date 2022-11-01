@@ -17,8 +17,9 @@ from torch.utils.tensorboard import SummaryWriter
 from EOTF import EMD
 from datetime import datetime
 
+# 'runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 # setup the writer
-writer = SummaryWriter('runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
+writer = SummaryWriter()
 
 
 class CustomImageDataset(Dataset):
@@ -54,7 +55,7 @@ class Net(nn.Module):
         self.stride1 = kwargs.setdefault('stride1', 1)
         self.padding1 = kwargs.setdefault('padding1', 0)
         self.dilation1 = kwargs.setdefault('dilation1', 1)
-        self.Cout1 = kwargs.setdefault('Cout1', 16)
+        self.Cout1 = kwargs.setdefault('Cout1', 8)
 
         # for conv3d layer 2:
         self.stride2 = kwargs.setdefault('stride2', 1)
@@ -63,8 +64,8 @@ class Net(nn.Module):
         self.Cout2 = kwargs.setdefault('Cout2', 32)
 
         # for maxpool 3D layer:
-        self.maxpool = kwargs.setdefault('maxpool', 2)
-        self.maxpool_stride = kwargs.setdefault('maxpool_stride', 1)
+        self.maxpool = kwargs.setdefault('maxpool', (1,3,3))
+        self.maxpool_stride = kwargs.setdefault('maxpool_stride', self.maxpool)
 
         # for Linear layer 2:
         self.linear2_input = kwargs.setdefault('linear2_input', 5280)
@@ -94,13 +95,13 @@ class Net(nn.Module):
             ((self.w_c1 + 2 * self.padding1 - self.dilation1 * (self.kernel_size - 1) - 1) / self.stride1) + 1)
 
         self.d_mp1 = torch.floor(
-            ((self.d_c2 - (self.maxpool - 1) - 1) / self.maxpool_stride) + 1)
+            ((self.d_c2 - (self.maxpool[0] - 1) - 1) / self.maxpool_stride[0]) + 1)
 
         self.h_mp1 = torch.floor(
-            ((self.h_c2 - (self.maxpool - 1) - 1) / self.maxpool_stride) + 1)
+            ((self.h_c2 - (self.maxpool[1] - 1) - 1) / self.maxpool_stride[1]) + 1)
 
         self.w_mp1 = torch.floor(
-            ((self.w_c2 - (self.maxpool - 1) - 1) / self.maxpool_stride) + 1)
+            ((self.w_c2 - (self.maxpool[2] - 1) - 1) / self.maxpool_stride[2]) + 1)
 
         self.linear1_input = int(self.Cout2 * self.d_mp1 * self.h_mp1 * self.w_mp1)
 
@@ -133,6 +134,32 @@ class Net(nn.Module):
         return output
 
 
+def logs_for_writer(model_tmp, epoch_num):
+        # Layer = conv1
+        writer.add_histogram("weights conv1 layer", model_tmp.conv1.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias conv1 layer", model_tmp.conv1.bias.data.flatten(), epoch_num)
+        if model_tmp.conv1.weight.grad is not None: # At the first run it doesnt work
+            writer.add_histogram("weights conv1 grad", model_tmp.conv1.weight.grad.flatten(), epoch_num)
+
+        # Layer = conv2
+        writer.add_histogram("weights conv2 layer", model_tmp.conv2.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias conv2 layer", model_tmp.conv2.bias.data.flatten(), epoch_num)
+        if model_tmp.conv2.weight.grad is not None:
+            writer.add_histogram("weights conv2 grad", model_tmp.conv2.weight.grad.flatten(), epoch_num)
+
+        # Layer = fc1
+        writer.add_histogram("weights fc1 layer", model_tmp.fc1.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias fc1 layer", model_tmp.fc1.bias.data.flatten(), epoch_num)
+        if model_tmp.fc1.weight.grad is not None:
+            writer.add_histogram("weights fc1 grad", model_tmp.fc1.weight.grad.flatten(), epoch_num)
+
+        # Layer = fc2
+        writer.add_histogram("weights fc2 layer", model_tmp.fc2.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias fc2 layer", model_tmp.fc2.bias.data.flatten(), epoch_num)
+        if model_tmp.fc2.weight.grad is not None:
+            writer.add_histogram("weights fc2 grad", model_tmp.fc2.weight.grad.flatten(), epoch_num)
+
+
 def train(args, model, device, train_loader, optimizer, epoch, transform):
     model.train()
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
@@ -153,7 +180,7 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = nn.L1Loss()
+        loss = nn.CrossEntropyLoss()
         loss = loss(output, torch.flatten(target, 1))
         loss.backward()
         optimizer.step()
@@ -217,6 +244,7 @@ def main(model_in_parameters=dict()):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
 
+
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -239,8 +267,8 @@ def main(model_in_parameters=dict()):
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
     print('Before pre process')
     # Preprocess data
-    for k in dataset_dict.keys():
-        frames_orig = dataset_dict[k][0]
+    for k in train_dict.keys():
+        frames_orig = train_dict[k][0]
         frames_orig = [f / 255 for f in frames_orig]  # for the normalization
 
         frames_preprocessed = [
@@ -250,10 +278,10 @@ def main(model_in_parameters=dict()):
             EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
             EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
         ]
-        dataset_dict[k] = (frames_preprocessed, dataset_dict[k][1])
+        train_dict[k] = (frames_preprocessed, train_dict[k][1])
 
     print('After pre process')
-    data, target = list(dataset_dict.values())[0]
+    data, target = list(train_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
     data, target = data.type(torch.DoubleTensor), target
@@ -267,18 +295,18 @@ def main(model_in_parameters=dict()):
     writer.add_graph(model, data)
     print('here')
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
-    for epoch in range(1, args.epochs + 1):
-        writer.add_histogram("weights conv1 layer", model.conv1.weight.data)
-        writer.add_histogram("bias conv1 layer", model.conv1.bias.data)
-        train(args, model, device, dataset_dict, optimizer, epoch, transform=transform)  # dataset_dict
-        net_test(model, device, dataset_dict, transform=transform)
-        scheduler.step()
 
+    for epoch in range(1, args.epochs + 1):
+        epoch_start_time = time.time()
+        logs_for_writer(model, epoch)
+        train(args, model, device, train_dict, optimizer, epoch, transform=transform)  # dataset_dict
+        net_test(model, device, train_dict, transform=transform)
+        scheduler.step()
+        elapsed = time.time() - epoch_start_time
     if args.save_model:
         torch.save(model.state_dict(), "mnist_cnn.pt")
 
-    writer.flush()
-    writer.close()
+
 
 if __name__ == '__main__':
     import os
@@ -290,21 +318,39 @@ if __name__ == '__main__':
     # If you want to run it you need to extract the dataset from the zip
     # general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
     general_DS_folser = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
-    desiered_dim = (40, 40)
+    desiered_dim = (60, 60)
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=desiered_dim,
+    number_of_videos = 15
+    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desiered_dim,
                                      number_of_frames=9)
 
+    # To create random train and test sets:
+    indexes = np.arange(number_of_videos)
+    np.random.shuffle(indexes)
+
+    train_indexes = indexes[0:int(np.round(0.8*number_of_videos))]
+    test_indexes = indexes[int(np.round(0.8*number_of_videos)) + 1::]
+
+    names_list = list(dataset_dict.keys())
+    train_dict = {}
+    test_dict = {}
+
+    for idx in train_indexes:
+        train_dict[names_list[idx]] = dataset_dict[names_list[idx]]
+
+    for idx in test_indexes:
+        test_dict[names_list[idx]] = dataset_dict[names_list[idx]]
     input_dict = {'in_frame_dim': (5, 8, desiered_dim[0], desiered_dim[1]),
-             'out_frame_dim': (5, 9, desiered_dim[0], desiered_dim[1]), 'Cout2': 16}
+             'out_frame_dim': (5, 9, desiered_dim[0], desiered_dim[1]), 'Cout2': 8}
 
     # TODO: this is the start of data loader, still we need to built all of it's attributes
     loader = CustomImageDataset(dataset_dict)
 
     main(input_dict)
-
+    writer.flush()
+    writer.close()
     """
     Things that we need to talk about:
     1. what is the resolution that we put in the net
