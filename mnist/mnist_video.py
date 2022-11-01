@@ -326,7 +326,7 @@ if __name__ == '__main__':
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desiered_dim,
                                      number_of_frames=9)
 
-    # To create random train and test sets:
+    # To create random train and test sets :
     indexes = np.arange(number_of_videos)
     np.random.shuffle(indexes)
 
