@@ -10,16 +10,16 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from utils_for_DL import create_data_tuple
+from utils_for_DL import create_data_tuple, save_results_to_date_file
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
-
+import cv2
 from EOTF import EMD
 from datetime import datetime
 
 # 'runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-# setup the writer
-writer = SummaryWriter()
+# setup the writer as global
+
 
 
 class CustomImageDataset(Dataset):
@@ -130,6 +130,7 @@ class Net(nn.Module):
         x = F.relu(x)
         x = self.dropout2(x)
         x = self.fc2(x)
+        x = x.reshape(self.out_frame_dim)
         output = torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         return output
 
@@ -181,7 +182,7 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
         optimizer.zero_grad()
         output = model(data)
         loss = nn.CrossEntropyLoss()
-        loss = loss(output, torch.flatten(target, 1))
+        loss = loss(output, target)
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
@@ -201,7 +202,7 @@ def net_test(model, device, test_loader, transform):
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for (data, target) in list(test_loader.values()):
+        for idx, (data, target) in enumerate(list(test_loader.values())):
             data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
             data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
             data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
@@ -209,10 +210,17 @@ def net_test(model, device, test_loader, transform):
 
             output = model(data)
             loss = nn.L1Loss()
-            loss = loss(output, torch.flatten(target, 1))
+            loss = loss(output, target)
             test_loss += loss  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
 
+            # to put the output in the results dict:
+            output_numpy = output.clone().cpu().numpy()
+            # devide into frames:
+            tmp_list = list()
+            for i in range(output_numpy.shape[1]):
+                tmp_list.append(output_numpy[:,i, :, :][0])
+            results_dict[list(test_loader.keys())[idx]].append(tmp_list)
     test_loss /= len(test_loader)
     print(f'The test loss is: {test_loss}')
 
@@ -224,7 +232,7 @@ def main(model_in_parameters=dict()):
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=14, metavar='N',
+    parser.add_argument('--epochs', type=int, default=2, metavar='N',
                         help='number of epochs to train (default: 14)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
                         help='learning rate (default: 1.0)')
@@ -243,8 +251,10 @@ def main(model_in_parameters=dict()):
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
-
-
+    global writer
+    writer_comment = f' epochs = {args.epochs} ||  model_in_parameters ={model_in_parameters["in_frame_dim"]} ||  ' \
+                     f' out_frame_dim = {model_in_parameters["out_frame_dim"]}'
+    writer = SummaryWriter(comment=writer_comment)
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -266,7 +276,7 @@ def main(model_in_parameters=dict()):
     model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
     print('Before pre process')
-    # Preprocess data
+    # Preprocess for train data
     for k in train_dict.keys():
         frames_orig = train_dict[k][0]
         frames_orig = [f / 255 for f in frames_orig]  # for the normalization
@@ -279,6 +289,20 @@ def main(model_in_parameters=dict()):
             EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
         ]
         train_dict[k] = (frames_preprocessed, train_dict[k][1])
+
+    # Preprocess for test data
+    for k in test_dict.keys():
+        frames_orig = test_dict[k][0]
+        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
+
+        frames_preprocessed = [
+            frames_orig[:-1],
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
+        ]
+        test_dict[k] = (frames_preprocessed, test_dict[k][1])
 
     print('After pre process')
     data, target = list(train_dict.values())[0]
@@ -293,14 +317,13 @@ def main(model_in_parameters=dict()):
     # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
 
     writer.add_graph(model, data)
-    print('here')
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
         logs_for_writer(model, epoch)
         train(args, model, device, train_dict, optimizer, epoch, transform=transform)  # dataset_dict
-        net_test(model, device, train_dict, transform=transform)
+        net_test(model, device, test_dict, transform=transform)
         scheduler.step()
         elapsed = time.time() - epoch_start_time
     if args.save_model:
@@ -310,7 +333,7 @@ def main(model_in_parameters=dict()):
 
 if __name__ == '__main__':
     import os
-
+    save_data = 1
     # import wandb
     #
     # wandb.init(project="test-project", entity="yuvalandchen")
@@ -318,12 +341,12 @@ if __name__ == '__main__':
     # If you want to run it you need to extract the dataset from the zip
     # general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
     general_DS_folser = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
-    desiered_dim = (60, 60)
+    desired_dim = (30, 30)
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    number_of_videos = 15
-    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desiered_dim,
+    number_of_videos = 12
+    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desired_dim,
                                      number_of_frames=9)
 
     # To create random train and test sets :
@@ -336,14 +359,18 @@ if __name__ == '__main__':
     names_list = list(dataset_dict.keys())
     train_dict = {}
     test_dict = {}
+    results_dict = {}
 
     for idx in train_indexes:
         train_dict[names_list[idx]] = dataset_dict[names_list[idx]]
 
     for idx in test_indexes:
         test_dict[names_list[idx]] = dataset_dict[names_list[idx]]
-    input_dict = {'in_frame_dim': (5, 8, desiered_dim[0], desiered_dim[1]),
-             'out_frame_dim': (5, 9, desiered_dim[0], desiered_dim[1]), 'Cout2': 8}
+        results_dict[names_list[idx]] = list()
+
+    input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
+             'out_frame_dim': (1, 9, desired_dim[0], desired_dim[1]), 'Cout2': 8}
+
 
     # TODO: this is the start of data loader, still we need to built all of it's attributes
     loader = CustomImageDataset(dataset_dict)
@@ -351,6 +378,9 @@ if __name__ == '__main__':
     main(input_dict)
     writer.flush()
     writer.close()
+
+    if save_data:
+        save_results_to_date_file(results_dict)
     """
     Things that we need to talk about:
     1. what is the resolution that we put in the net
