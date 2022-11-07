@@ -131,7 +131,7 @@ class Net(nn.Module):
         x = self.dropout2(x)
         x = self.fc2(x)
         x = x.reshape(self.out_frame_dim)
-        output = torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
+        output = x  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         return output
 
 
@@ -232,7 +232,7 @@ def main(model_in_parameters=dict()):
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=2, metavar='N',
+    parser.add_argument('--epochs', type=int, default=14, metavar='N',
                         help='number of epochs to train (default: 14)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
                         help='learning rate (default: 1.0)')
@@ -341,11 +341,11 @@ if __name__ == '__main__':
     # If you want to run it you need to extract the dataset from the zip
     # general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
     general_DS_folser = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
-    desired_dim = (30, 30)
+    desired_dim = (100, 100)
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    number_of_videos = 12
+    number_of_videos = 90
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desired_dim,
                                      number_of_frames=9)
 
