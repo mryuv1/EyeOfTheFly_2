@@ -1,7 +1,8 @@
 import cv2
 import os
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
+import pickle
 
 
 def read_all_pictures_in_file(dir, desiered_dim=None, number_of_frames=np.inf) -> list:
@@ -33,11 +34,33 @@ def create_data_tuple(dir, number_of_videos=5, desiered_dim=None, number_of_fram
 
         annotation_list = read_all_pictures_in_file(annototion_vid_path, desiered_dim=desiered_dim,
                                                     number_of_frames=number_of_frames)
+        # for current use we want the segmentaion to be only 0 or 1
+        annotation_list = [np.where(frame > 0, 1, 0) for frame in annotation_list]
         JPEG_list = read_all_pictures_in_file(JPEG_path_vid_path, desiered_dim=desiered_dim,
                                               number_of_frames=number_of_frames)
 
         dataset_dict[anotations_list[video_idx]] = (JPEG_list, annotation_list)
     return dataset_dict
+
+
+def save_results_to_date_file(data_to_save, file_name: str = None):
+    from datetime import datetime, date
+
+    today = date.today()
+    d1 = today.strftime("%d_%m_%Y")
+
+    if not file_name:
+        now = datetime.now()
+        file_name = now.strftime("%H:%M")
+
+    path = os.path.join('saved_results', d1)
+    if not os.path.isdir(path):
+        os.mkdir(path)
+
+    path = os.path.join(path, file_name)
+    with open(path + '.pickle', 'wb') as handle:
+        pickle.dump(data_to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
 
 if __name__ == '__main__':

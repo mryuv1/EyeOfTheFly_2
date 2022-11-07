@@ -1,6 +1,7 @@
 from __future__ import print_function
 import argparse
 import sys
+import time
 
 import torch
 import torch.nn as nn
@@ -9,15 +10,16 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from utils_for_DL import create_data_tuple
+from utils_for_DL import create_data_tuple, save_results_to_date_file
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
-
+import cv2
 from EOTF import EMD
+from datetime import datetime
 
+# 'runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+# setup the writer as global
 
-# setup the writer
-writer = SummaryWriter('runs')
 
 
 class CustomImageDataset(Dataset):
@@ -45,14 +47,15 @@ class Net(nn.Module):
     def __init__(self, **kwargs):
         super(Net, self).__init__()
         # args that we can change:
-        self.frame_dim = kwargs.setdefault('frame_dim', (4, 9, 220, 120))
+        self.in_frame_dim = kwargs.setdefault('in_frame_dim', (4, 9, 220, 120))
+        self.out_frame_dim = kwargs.setdefault('out_frame_dim', (4, 9, 220, 120))
         self.kernel_size = kwargs.setdefault('kernel_size', 3)
 
         # for conv3d layer 1:
         self.stride1 = kwargs.setdefault('stride1', 1)
         self.padding1 = kwargs.setdefault('padding1', 0)
         self.dilation1 = kwargs.setdefault('dilation1', 1)
-        self.Cout1 = kwargs.setdefault('Cout1', 16)
+        self.Cout1 = kwargs.setdefault('Cout1', 8)
 
         # for conv3d layer 2:
         self.stride2 = kwargs.setdefault('stride2', 1)
@@ -61,8 +64,8 @@ class Net(nn.Module):
         self.Cout2 = kwargs.setdefault('Cout2', 32)
 
         # for maxpool 3D layer:
-        self.maxpool = kwargs.setdefault('maxpool', 2)
-        self.maxpool_stride = kwargs.setdefault('maxpool_stride', 1)
+        self.maxpool = kwargs.setdefault('maxpool', (1,3,3))
+        self.maxpool_stride = kwargs.setdefault('maxpool_stride', self.maxpool)
 
         # for Linear layer 2:
         self.linear2_input = kwargs.setdefault('linear2_input', 5280)
@@ -71,15 +74,15 @@ class Net(nn.Module):
         # calculating important dims for the network initiation:
         # the format is (D, H, W) the letter is for the layer type (c for conv) and the index for the number:
         self.d_c1 = torch.floor(
-            torch.tensor(((self.frame_dim[1] + 2 * self.padding1 - self.dilation1 * (
+            torch.tensor(((self.in_frame_dim[1] + 2 * self.padding1 - self.dilation1 * (
                     self.kernel_size - 1) - 1) / self.stride1) + 1))
 
         self.h_c1 = torch.floor(
-            torch.tensor(((self.frame_dim[2] + 2 * self.padding1 - self.dilation1 * (
+            torch.tensor(((self.in_frame_dim[2] + 2 * self.padding1 - self.dilation1 * (
                     self.kernel_size - 1) - 1) / self.stride1) + 1))
 
         self.w_c1 = torch.floor(
-            torch.tensor(((self.frame_dim[3] + 2 * self.padding1 - self.dilation1 * (
+            torch.tensor(((self.in_frame_dim[3] + 2 * self.padding1 - self.dilation1 * (
                     self.kernel_size - 1) - 1) / self.stride1) + 1))
 
         self.d_c2 = torch.floor(
@@ -92,20 +95,20 @@ class Net(nn.Module):
             ((self.w_c1 + 2 * self.padding1 - self.dilation1 * (self.kernel_size - 1) - 1) / self.stride1) + 1)
 
         self.d_mp1 = torch.floor(
-            ((self.d_c2 - (self.maxpool - 1) - 1) / self.maxpool_stride) + 1)
+            ((self.d_c2 - (self.maxpool[0] - 1) - 1) / self.maxpool_stride[0]) + 1)
 
         self.h_mp1 = torch.floor(
-            ((self.h_c2 - (self.maxpool - 1) - 1) / self.maxpool_stride) + 1)
+            ((self.h_c2 - (self.maxpool[1] - 1) - 1) / self.maxpool_stride[1]) + 1)
 
         self.w_mp1 = torch.floor(
-            ((self.w_c2 - (self.maxpool - 1) - 1) / self.maxpool_stride) + 1)
+            ((self.w_c2 - (self.maxpool[2] - 1) - 1) / self.maxpool_stride[2]) + 1)
 
         self.linear1_input = int(self.Cout2 * self.d_mp1 * self.h_mp1 * self.w_mp1)
 
-        self.output_flatten_size = int(self.frame_dim[1] * self.frame_dim[2] * self.frame_dim[3])
+        self.output_flatten_size = int(self.out_frame_dim[1] * self.out_frame_dim[2] * self.out_frame_dim[3])
         # -----------------------------------------------------------------------------
         # the network layers:
-        self.conv1 = nn.Conv3d(self.frame_dim[0], self.Cout1, self.kernel_size, stride=self.stride1,
+        self.conv1 = nn.Conv3d(self.in_frame_dim[0], self.Cout1, self.kernel_size, stride=self.stride1,
                                padding=self.padding1,
                                dilation=self.dilation1)
         self.conv2 = nn.Conv3d(self.Cout1, self.Cout2, self.kernel_size, stride=self.stride2, padding=self.padding2,
@@ -127,8 +130,35 @@ class Net(nn.Module):
         x = F.relu(x)
         x = self.dropout2(x)
         x = self.fc2(x)
-        output = x
+        x = x.reshape(self.out_frame_dim)
+        output = x  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         return output
+
+
+def logs_for_writer(model_tmp, epoch_num):
+        # Layer = conv1
+        writer.add_histogram("weights conv1 layer", model_tmp.conv1.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias conv1 layer", model_tmp.conv1.bias.data.flatten(), epoch_num)
+        if model_tmp.conv1.weight.grad is not None: # At the first run it doesnt work
+            writer.add_histogram("weights conv1 grad", model_tmp.conv1.weight.grad.flatten(), epoch_num)
+
+        # Layer = conv2
+        writer.add_histogram("weights conv2 layer", model_tmp.conv2.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias conv2 layer", model_tmp.conv2.bias.data.flatten(), epoch_num)
+        if model_tmp.conv2.weight.grad is not None:
+            writer.add_histogram("weights conv2 grad", model_tmp.conv2.weight.grad.flatten(), epoch_num)
+
+        # Layer = fc1
+        writer.add_histogram("weights fc1 layer", model_tmp.fc1.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias fc1 layer", model_tmp.fc1.bias.data.flatten(), epoch_num)
+        if model_tmp.fc1.weight.grad is not None:
+            writer.add_histogram("weights fc1 grad", model_tmp.fc1.weight.grad.flatten(), epoch_num)
+
+        # Layer = fc2
+        writer.add_histogram("weights fc2 layer", model_tmp.fc2.weight.data.flatten(), epoch_num)
+        writer.add_histogram("bias fc2 layer", model_tmp.fc2.bias.data.flatten(), epoch_num)
+        if model_tmp.fc2.weight.grad is not None:
+            writer.add_histogram("weights fc2 grad", model_tmp.fc2.weight.grad.flatten(), epoch_num)
 
 
 def train(args, model, device, train_loader, optimizer, epoch, transform):
@@ -136,7 +166,7 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     print(
         '\033[96m' + f'This current option is for 2 kernels of Fourier (x,y) '
-                     f'and 2 in Glider.\nEach frame is ({check["frame_dim"][2]}, {check["frame_dim"][3]}).\n' + '\033[0m')
+                     f'and 2 in Glider.\nEach frame is ({input_dict["in_frame_dim"][2]}, {input_dict["in_frame_dim"][3]}).\n' + '\033[0m')
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     running_loss = 0.0
     for batch_idx, (data, target) in enumerate(list(train_loader.values())):
@@ -145,17 +175,14 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
         #       This current option is for 2 kernels of Fourier (x, y) and 2 in Glider
         data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
         data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
-        data, target = data.repeat(4, 1, 1, 1), target
+        data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
 
-        # tmp normalization:
-        data, target = data / 255, target / 255
-        data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
         # ----------------------------------------------------------------------------------------------------------#
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = nn.MSELoss()
-        loss = loss(output, torch.flatten(target, 1))
+        loss = nn.CrossEntropyLoss()
+        loss = loss(output, target)
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
@@ -170,26 +197,30 @@ def train(args, model, device, train_loader, optimizer, epoch, transform):
                 break
 
 
-def test(model, device, test_loader, transform):
+def net_test(model, device, test_loader, transform):
     model.eval()
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for (data, target) in list(test_loader.values()):
+        for idx, (data, target) in enumerate(list(test_loader.values())):
             data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
             data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
-            data, target = data.repeat(4, 1, 1, 1), target
-
-            # tmp normalization:
-            data, target = data / 255, target / 255
-            data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
+            data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
+            data, target = data.to(device), target.to(device)
 
             output = model(data)
-            loss = nn.MSELoss()
-            loss = loss(output, torch.flatten(target, 1))
+            loss = nn.L1Loss()
+            loss = loss(output, target)
             test_loss += loss  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
 
+            # to put the output in the results dict:
+            output_numpy = output.clone().cpu().numpy()
+            # devide into frames:
+            tmp_list = list()
+            for i in range(output_numpy.shape[1]):
+                tmp_list.append(output_numpy[:,i, :, :][0])
+            results_dict[list(test_loader.keys())[idx]].append(tmp_list)
     test_loss /= len(test_loader)
     print(f'The test loss is: {test_loss}')
 
@@ -220,7 +251,10 @@ def main(model_in_parameters=dict()):
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
-
+    global writer
+    writer_comment = f' epochs = {args.epochs} ||  model_in_parameters ={model_in_parameters["in_frame_dim"]} ||  ' \
+                     f' out_frame_dim = {model_in_parameters["out_frame_dim"]}'
+    writer = SummaryWriter(comment=writer_comment)
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -241,11 +275,12 @@ def main(model_in_parameters=dict()):
 
     model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+    print('Before pre process')
+    # Preprocess for train data
+    for k in train_dict.keys():
+        frames_orig = train_dict[k][0]
+        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
 
-    # Preprocess data
-    for k in dataset_dict.keys():
-        frames_orig = dataset_dict[k][0]
-        frames_orig = [f/255 for f in frames_orig] # for the normalization
         frames_preprocessed = [
             frames_orig[:-1],
             EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
@@ -253,13 +288,28 @@ def main(model_in_parameters=dict()):
             EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
             EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
         ]
-        dataset_dict[k] = (frames_preprocessed, dataset_dict[k][1])
+        train_dict[k] = (frames_preprocessed, train_dict[k][1])
 
+    # Preprocess for test data
+    for k in test_dict.keys():
+        frames_orig = test_dict[k][0]
+        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
 
-    data, target = list(dataset_dict.values())[0]
+        frames_preprocessed = [
+            frames_orig[:-1],
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
+        ]
+        test_dict[k] = (frames_preprocessed, test_dict[k][1])
+
+    print('After pre process')
+    data, target = list(train_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
     data, target = data.type(torch.DoubleTensor), target
+    data, target = data.to(device), target.to(device)
     #data, target = data.repeat(4, 1, 1, 1), target # 4,9,40,40
 
     # tmp normalization:
@@ -267,45 +317,70 @@ def main(model_in_parameters=dict()):
     # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
 
     writer.add_graph(model, data)
-
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
-    for epoch in range(1, args.epochs + 1):
-        writer.add_histogram("weights conv1 layer", model.conv1.weight)
-        writer.add_histogram("bias conv1 layer", model.conv1.bias)
-        train(args, model, device, dataset_dict, optimizer, epoch, transform=transform)  # dataset_dict
-        writer.close()
-        sys.exit()
-        test(model, device, dataset_dict, transform=transform)
-        scheduler.step()
 
+    for epoch in range(1, args.epochs + 1):
+        epoch_start_time = time.time()
+        logs_for_writer(model, epoch)
+        train(args, model, device, train_dict, optimizer, epoch, transform=transform)  # dataset_dict
+        net_test(model, device, test_dict, transform=transform)
+        scheduler.step()
+        elapsed = time.time() - epoch_start_time
     if args.save_model:
         torch.save(model.state_dict(), "mnist_cnn.pt")
 
 
+
 if __name__ == '__main__':
     import os
-
+    save_data = 1
     # import wandb
     #
     # wandb.init(project="test-project", entity="yuvalandchen")
 
     # If you want to run it you need to extract the dataset from the zip
-    general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
-
-    desiered_dim = (40, 40)
+    # general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
+    general_DS_folser = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
+    desired_dim = (100, 100)
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=40, desiered_dim=desiered_dim,
+    number_of_videos = 90
+    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desired_dim,
                                      number_of_frames=9)
 
-    check = {'frame_dim': (5, 8, desiered_dim[0], desiered_dim[1]), 'Cout2': 16}
+    # To create random train and test sets :
+    indexes = np.arange(number_of_videos)
+    np.random.shuffle(indexes)
+
+    train_indexes = indexes[0:int(np.round(0.8*number_of_videos))]
+    test_indexes = indexes[int(np.round(0.8*number_of_videos)) + 1::]
+
+    names_list = list(dataset_dict.keys())
+    train_dict = {}
+    test_dict = {}
+    results_dict = {}
+
+    for idx in train_indexes:
+        train_dict[names_list[idx]] = dataset_dict[names_list[idx]]
+
+    for idx in test_indexes:
+        test_dict[names_list[idx]] = dataset_dict[names_list[idx]]
+        results_dict[names_list[idx]] = list()
+
+    input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
+             'out_frame_dim': (1, 9, desired_dim[0], desired_dim[1]), 'Cout2': 8}
+
 
     # TODO: this is the start of data loader, still we need to built all of it's attributes
     loader = CustomImageDataset(dataset_dict)
 
-    main(check)
+    main(input_dict)
+    writer.flush()
+    writer.close()
 
+    if save_data:
+        save_results_to_date_file(results_dict)
     """
     Things that we need to talk about:
     1. what is the resolution that we put in the net
