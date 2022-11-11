@@ -10,7 +10,7 @@ def total_variation(frame):
 
 
 def moving_variance(frame, kernel_size):
-    #kernel = np.ones((kernel_size, kernel_size)) / (kernel_size*kernel_size)
+    #kernel = np.ones((conv1_kernel_size, conv1_kernel_size)) / (conv1_kernel_size*conv1_kernel_size)
     EX = cv2.blur(frame, kernel_size)
     EX2 = cv2.blur(np.square(frame), kernel_size)
     result = np.square(EX) - EX2

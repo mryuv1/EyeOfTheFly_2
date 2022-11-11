@@ -12,7 +12,7 @@ def make_gaussian_kernel(size: int, sigma: float = 1) -> np.array:
 
 class PhotoreceptorImageConverter:
     def __init__(self, kernel: np.array, pic_shape: (int, int), photoreceptor_num: int, pad_mode = "symmetric"):
-        # Assumption: kernel_size is an odd number
+        # Assumption: conv1_kernel_size is an odd number
         self.kernel = kernel
         self.h_size = int(np.sqrt(pic_shape[1] * photoreceptor_num / pic_shape[0]).round())
         if self.h_size < 1: self.h_size = 1
