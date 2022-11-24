@@ -23,25 +23,62 @@ from datetime import datetime
 # setup the writer as global
 
 
-class CustomImageDataset(Dataset):
-    def __init__(self, dataset_dict, transform=None, target_transform=None):
-        self.dataset_dict = dataset_dict
-        self.transform = transform
-        self.target_transform = target_transform
+# class CustomImageDataset(Dataset):
+#     def __init__(self, dataset_dict, transform=None, target_transform=None):
+#         self.dataset_dict = dataset_dict
+#         self.transform = transform
+#         self.target_transform = target_transform
+#
+#     def __len__(self):
+#         return len(self.dataset_dict)
+#
+#     def __getitem__(self, idx):
+#         names = list(self.dataset_dict.keys())
+#         name_idx = names[idx]
+#         images = self.dataset_dict[name_idx][0]
+#         segmentation = self.dataset_dict[name_idx][1]
+#         if self.transform:
+#             images = self.transform(images)
+#         if self.target_transform:
+#             segmentation = self.target_transform(segmentation)
+#         return images, segmentation
 
-    def __len__(self):
-        return len(self.dataset_dict)
+def make_train_and_test_dicts(datasetPath, number_of_videos, desired_dim):
+    dataset_dict = create_data_tuple(datasetPath, number_of_videos=number_of_videos, desiered_dim=desired_dim,
+                                     number_of_frames=9)
 
-    def __getitem__(self, idx):
-        names = list(self.dataset_dict.keys())
-        name_idx = names[idx]
-        images = self.dataset_dict[name_idx][0]
-        segmentation = self.dataset_dict[name_idx][1]
-        if self.transform:
-            images = self.transform(images)
-        if self.target_transform:
-            segmentation = self.target_transform(segmentation)
-        return images, segmentation
+    # To create random train and test sets :
+    indexes = np.arange(number_of_videos)
+    np.random.shuffle(indexes)
+
+    train_indexes = indexes[0:int(np.round(0.8 * number_of_videos))]
+    test_indexes = indexes[int(np.round(0.8 * number_of_videos)) + 1::]
+
+    names_list = list(dataset_dict.keys())
+    train_dict = {}
+    test_dict = {}
+    results_dict = {}
+
+    for idx in train_indexes:
+        train_dict[names_list[idx]] = dataset_dict[names_list[idx]]
+
+    for idx in test_indexes:
+        test_dict[names_list[idx]] = dataset_dict[names_list[idx]]
+        results_dict[names_list[idx]] = list()
+
+    return train_dict, test_dict, results_dict
+
+
+class Args():
+    def __init__(self, **kwargs):
+        self.batch_size = kwargs.setdefault('batch_size', 2)
+        self.dry_run = kwargs.setdefault('dry_run', False)
+        self.gamma = kwargs.setdefault('gamma', 0.7)
+        self.epochs = kwargs.setdefault('epochs', 14)
+        self.log_interval = kwargs.setdefault('log_interval', 10)
+        self.lr = kwargs.setdefault('epochs', 10)
+        self.no_cuda = kwargs.setdefault('epochs', False)
+        self.seed = kwargs.setdefault('seed', False)
 
 
 class Net(nn.Module):
@@ -243,30 +280,9 @@ def net_test(model, device, test_loader, transform):
     print(f'The test loss is: {test_loss}')
 
 
-def main(model_in_parameters=dict()):
-    # Training settings
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--batch-size', type=int, default=2, metavar='N',
-                        help='input batch size for training (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
-                        help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=14, metavar='N',
-                        help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=10, metavar='LR',
-                        help='learning rate (default: 1.0)')
-    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
-                        help='Learning rate step gamma (default: 0.7)')
-    parser.add_argument('--no-cuda', action='store_true', default=False,
-                        help='disables CUDA training')
-    parser.add_argument('--dry-run', action='store_true', default=False,
-                        help='quickly check a single pass')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
-    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                        help='how many batches to wait before logging training status')
-    parser.add_argument('--save-model', action='store_true', default=False,
-                        help='For Saving the current Model')
-    args = parser.parse_args()
+def main(model_in_parameters=dict(), run_args_dict=dict()):
+
+    args = Args(**run_args_dict)
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
     global writer
@@ -276,15 +292,6 @@ def main(model_in_parameters=dict()):
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
-
-    train_kwargs = {'batch_size': args.batch_size}
-    test_kwargs = {'batch_size': args.test_batch_size}
-    if use_cuda:
-        cuda_kwargs = {'num_workers': 1,
-                       'pin_memory': True,
-                       'shuffle': True}
-        train_kwargs.update(cuda_kwargs)
-        test_kwargs.update(cuda_kwargs)
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -357,42 +364,20 @@ if __name__ == '__main__':
     # wandb.init(project="test-project", entity="yuvalandchen")
 
     # If you want to run it you need to extract the dataset from the zip
-    # general_DS_folser = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
-    general_DS_folser = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
+    # general_DS_folder = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
+    general_DS_folder = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
     desired_dim = (120, 120)
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
     number_of_videos = 12
-    dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desired_dim,
-                                     number_of_frames=9)
-
-    # To create random train and test sets :
-    indexes = np.arange(number_of_videos)
-    np.random.shuffle(indexes)
-
-    train_indexes = indexes[0:int(np.round(0.8 * number_of_videos))]
-    test_indexes = indexes[int(np.round(0.8 * number_of_videos)) + 1::]
-
-    names_list = list(dataset_dict.keys())
-    train_dict = {}
-    test_dict = {}
-    results_dict = {}
-
-    for idx in train_indexes:
-        train_dict[names_list[idx]] = dataset_dict[names_list[idx]]
-
-    for idx in test_indexes:
-        test_dict[names_list[idx]] = dataset_dict[names_list[idx]]
-        results_dict[names_list[idx]] = list()
+    train_dict, test_dict, results_dict = make_train_and_test_dicts(general_DS_folder, number_of_videos, desired_dim)
 
     input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
                   'out_frame_dim': (1, 9, desired_dim[0], desired_dim[1]), 'Cout2': 8}
+    run_args_dict = dict()
 
-    # TODO: this is the start of data loader, still we need to built all of it's attributes
-    loader = CustomImageDataset(dataset_dict)
-
-    main(input_dict)
+    main(input_dict, run_args_dict)
     writer.flush()
     writer.close()
 
@@ -404,3 +389,26 @@ if __name__ == '__main__':
     2. how many channels -option1->  F:x,y ; G:x,y  -option2->  option1 + other_2*x,y
     3. should we start with a segmentaion of a single frame or to start directly with couple of frames. - Answer: video
     """
+
+    # # Training settings
+    # parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    # parser.add_argument('--batch-size', type=int, default=2, metavar='N',
+    #                     help='input batch size for training (default: 64)')
+    # parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+    #                     help='input batch size for testing (default: 1000)')
+    # parser.add_argument('--epochs', type=int, default=14, metavar='N',
+    #                     help='number of epochs to train (default: 14)')
+    # parser.add_argument('--lr', type=float, default=10, metavar='LR',
+    #                     help='learning rate (default: 1.0)')
+    # parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
+    #                     help='Learning rate step gamma (default: 0.7)')
+    # parser.add_argument('--no-cuda', action='store_true', default=False,
+    #                     help='disables CUDA training')
+    # parser.add_argument('--dry-run', action='store_true', default=False,
+    #                     help='quickly check a single pass')
+    # parser.add_argument('--seed', type=int, default=1, metavar='S',
+    #                     help='random seed (default: 1)')
+    # parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+    #                     help='how many batches to wait before logging training status')
+    # parser.add_argument('--save-model', action='store_true', default=False,
+    #                     help='For Saving the current Model')
