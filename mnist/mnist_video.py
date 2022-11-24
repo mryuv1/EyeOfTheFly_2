@@ -77,14 +77,16 @@ class Net(nn.Module):
         # the format is (D, H, W) the letter is for the layer type (c for conv) and the index for the number:
         self.conv1_dims = torch.floor((torch.tensor(self.in_frame_dim)[1::] +
                                        2 * torch.tensor(self.padding1) - torch.tensor(self.dilation1) * (
-                    torch.tensor(self.conv1_kernel_size) - 1) - 1) / torch.tensor(self.stride1) + 1)
+                                               torch.tensor(self.conv1_kernel_size) - 1) - 1) / torch.tensor(
+            self.stride1) + 1)
 
         self.conv2_dims = torch.floor(
             ((torch.tensor(self.conv1_dims) + 2 * torch.tensor(self.padding2) - torch.tensor(self.dilation2) * (
                     torch.tensor(self.conv2_kernel_size) - 1) - 1) / torch.tensor(self.stride2)) + 1)
 
         self.max_pool1_dims = torch.floor(
-            ((torch.tensor(self.conv2_dims) - (torch.tensor(self.maxpool) - 1) - 1) / torch.tensor(self.maxpool_stride)) + 1)
+            ((torch.tensor(self.conv2_dims) - (torch.tensor(self.maxpool) - 1) - 1) / torch.tensor(
+                self.maxpool_stride)) + 1)
 
         self.linear1_input = int(self.Cout2 * torch.prod(self.max_pool1_dims))
 
@@ -101,6 +103,13 @@ class Net(nn.Module):
         self.dropout2 = nn.Dropout(0.5)
         self.fc1 = nn.Linear(self.linear1_input, self.linear2_input)
         self.fc2 = nn.Linear(self.linear2_input, self.output_flatten_size)
+        self.init_weights()
+
+    def init_weights(self):
+        torch.nn.init.xavier_uniform_(self.conv1.weight)
+        torch.nn.init.xavier_uniform_(self.conv2.weight)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        torch.nn.init.xavier_uniform_(self.fc2.weight)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -156,7 +165,6 @@ def batchify(data_dict: dict, batch_size: int) -> list:
     tensors_raw_data = torch.Tensor(np.array(list_of_raw_data)).type(torch.DoubleTensor)
     tensors_results = torch.Tensor(np.array(list_of_results)).type(torch.DoubleTensor)
     batched_list = list()
-
 
     idx = 0
     while idx < len(elements):
@@ -217,10 +225,12 @@ def net_test(model, device, test_loader, transform):
             data, target = data.to(device), target.to(device)
 
             output = model(data)
-            loss = nn.L1Loss()
-            loss = loss(output, target)
+            criterion = nn.BCEWithLogitsLoss()
+            loss = criterion(output, target)
+            # loss = nn.L1Loss()
+            # loss = loss(output, target)
             test_loss += loss  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+            # pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
 
             # to put the output in the results dict:
             output_numpy = output.clone().cpu().numpy()
@@ -242,7 +252,7 @@ def main(model_in_parameters=dict()):
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=14, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
+    parser.add_argument('--lr', type=float, default=10, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
                         help='Learning rate step gamma (default: 0.7)')
@@ -353,7 +363,7 @@ if __name__ == '__main__':
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    number_of_videos = 90
+    number_of_videos = 12
     dataset_dict = create_data_tuple(general_DS_folser, number_of_videos=number_of_videos, desiered_dim=desired_dim,
                                      number_of_frames=9)
 

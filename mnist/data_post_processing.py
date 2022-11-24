@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-path = 'saved_results/07_11_2022/14:53.pickle'
+path = 'saved_results/21_11_2022/16:01.pickle'
 obj = pd.read_pickle(path)
 
 print('post_process')
