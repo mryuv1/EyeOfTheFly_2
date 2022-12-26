@@ -2,7 +2,7 @@ from __future__ import print_function
 import argparse
 import sys
 import time
-
+from utils_modified_from_Unet import Up, Down, DoubleConv_3d, OutConv
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,8 +11,14 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
 from utils_for_DL import create_data_tuple, save_results_to_date_file
+
+global yuvals_computer
+yuvals_computer = 1
+
 from torch.utils.data import Dataset
-from torch.utils.tensorboard import SummaryWriter
+
+if not yuvals_computer:
+    from torch.utils.tensorboard import SummaryWriter
 import random
 import cv2
 from EOTF import EMD
@@ -85,83 +91,35 @@ class Net(nn.Module):
     def __init__(self, **kwargs):
         super(Net, self).__init__()
         # args that we can change:
-        self.in_frame_dim = kwargs.setdefault('in_frame_dim', (4, 9, 220, 120))
-        self.out_frame_dim = kwargs.setdefault('out_frame_dim', (4, 9, 220, 120))
+        self.in_frame_dim = kwargs.setdefault('in_frame_dim', (9, 4, 220, 120))
+        self.out_frame_dim = kwargs.setdefault('out_frame_dim', (9, 220, 120))
+        self.out_channels_1 = kwargs.setdefault('out_channels_1', 32)
 
-        # for conv3d layer 1:
-        self.stride1 = kwargs.setdefault('stride1', (1, 3, 3))
-        self.padding1 = kwargs.setdefault('padding1', (0, 0, 0))
-        self.dilation1 = kwargs.setdefault('dilation1', (1, 1, 1))
-        self.Cout1 = kwargs.setdefault('Cout1', 9)
-        self.conv1_kernel_size = kwargs.setdefault('conv1_kernel_size', (1, 3, 3))
 
-        # for conv3d layer 2:
-        self.stride2 = kwargs.setdefault('stride2', (1, 1, 1))
-        self.padding2 = kwargs.setdefault('padding2', (0, 0, 0))
-        self.dilation2 = kwargs.setdefault('dilation2', (1, 1, 1))
-        self.Cout2 = kwargs.setdefault('Cout2', 32)
-        self.conv2_kernel_size = kwargs.setdefault('conv1_kernel_size', (3, 3, 3))
-
-        # for maxpool 3D layer:
-        self.maxpool = kwargs.setdefault('maxpool', (1, 3, 3))
-        self.maxpool_stride = kwargs.setdefault('maxpool_stride', self.maxpool)
-
-        # for Linear layer 2:
-        self.linear2_input = kwargs.setdefault('linear2_input', 5280)
-
-        # -----------------------------------------------------------------------------
-        # calculating important dims for the network initiation:
-        # the format is (D, H, W) the letter is for the layer type (c for conv) and the index for the number:
-        self.conv1_dims = torch.floor((torch.tensor(self.in_frame_dim)[1::] +
-                                       2 * torch.tensor(self.padding1) - torch.tensor(self.dilation1) * (
-                                               torch.tensor(self.conv1_kernel_size) - 1) - 1) / torch.tensor(
-            self.stride1) + 1)
-
-        self.conv2_dims = torch.floor(
-            ((torch.tensor(self.conv1_dims) + 2 * torch.tensor(self.padding2) - torch.tensor(self.dilation2) * (
-                    torch.tensor(self.conv2_kernel_size) - 1) - 1) / torch.tensor(self.stride2)) + 1)
-
-        self.max_pool1_dims = torch.floor(
-            ((torch.tensor(self.conv2_dims) - (torch.tensor(self.maxpool) - 1) - 1) / torch.tensor(
-                self.maxpool_stride)) + 1)
-
-        self.linear1_input = int(self.Cout2 * torch.prod(self.max_pool1_dims))
-
-        self.output_flatten_size = int(self.out_frame_dim[1] * self.out_frame_dim[2] * self.out_frame_dim[3])
-        # -----------------------------------------------------------------------------
         # the network layers:
-        self.conv1 = nn.Conv3d(self.in_frame_dim[0], self.Cout1, self.conv1_kernel_size, stride=self.stride1,
-                               padding=self.padding1,
-                               dilation=self.dilation1)
-        self.conv2 = nn.Conv3d(self.Cout1, self.Cout2, self.conv2_kernel_size, stride=self.stride2,
-                               padding=self.padding2,
-                               dilation=self.dilation2)
-        self.dropout1 = nn.Dropout(0.25)
-        self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(self.linear1_input, self.linear2_input)
-        self.fc2 = nn.Linear(self.linear2_input, self.output_flatten_size)
-        self.init_weights()
+        self.inc = DoubleConv_3d(in_channels=self.in_frame_dim[0], out_channels=self.out_channels_1)
+        self.down1 = Down(in_channels=self.out_channels_1, out_channels=2 * self.out_channels_1)
+        self.down2 = Down(in_channels=2 * self.out_channels_1, out_channels=4 * self.out_channels_1)
+        self.down3 = Down(in_channels=4 * self.out_channels_1, out_channels=4 * self.out_channels_1)
+        self.up1 = Up(in_channels=8 * self.out_channels_1, out_channels=2 * self.out_channels_1)
+        self.up2 = Up(in_channels=4 * self.out_channels_1, out_channels=self.out_channels_1)
+        self.up3 = Up(in_channels=2 * self.out_channels_1, out_channels=self.out_channels_1)
+        self.outc = OutConv(self.out_channels_1, 1)
+        # self.init_weights()
 
-    def init_weights(self):
-        torch.nn.init.xavier_uniform_(self.conv1.weight)
-        torch.nn.init.xavier_uniform_(self.conv2.weight)
-        torch.nn.init.xavier_uniform_(self.fc1.weight)
-        torch.nn.init.xavier_uniform_(self.fc2.weight)
+    # def init_weights(self):
+    #     torch.nn.init.xavier_uniform_(self.conv1.weight)
+    #     torch.nn.init.xavier_uniform_(self.conv2.weight)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = F.max_pool3d(x, self.maxpool, stride=self.maxpool_stride)
-        x = self.dropout1(x)
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.dropout2(x)
-        x = self.fc2(x)
-        x = x.reshape((x.shape[0], self.out_frame_dim[1], self.out_frame_dim[2], self.out_frame_dim[3]))
-        output = x  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x = self.up1(x4, x3)
+        x = self.up2(x, x2)
+        x = self.up3(x, x1)
+        output = self.outc(x)  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         return output
 
 
@@ -220,8 +178,8 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
                      f'and 2 in Glider.\nEach frame is ({input_dict["in_frame_dim"][2]}, {input_dict["in_frame_dim"][3]}).\n' + '\033[0m')
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     running_loss = 0.0
+    train_list = batchify(train_loader, batch_size=1)
 
-    train_list = batchify(train_loader, batch_size=batch_size)
     for batch_idx, (data, target) in enumerate(train_list):
         # ----------------------------------------------------------------------------------------------------------#
         # TODO: when we build the DATALOADER we need to delete the lines below.
@@ -229,12 +187,15 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
         # data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
         # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
         # data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
-
+        # data, target = torch.squeeze(data, dim=0), torch.squeeze(target, dim=0)
         # ----------------------------------------------------------------------------------------------------------#
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
+        output = torch.squeeze(output, dim=0)
         criterion = nn.BCEWithLogitsLoss()
+        #TODO:to fix the line below
+        target = target[:,1:]
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
@@ -243,14 +204,15 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader),
                        100. * batch_idx / len(train_loader), loss.item()))
-            writer.add_scalar('training loss', loss.item() / args.log_interval,
-                              epoch * len(train_list) + batch_idx)
+            if not yuvals_computer:
+                writer.add_scalar('training loss', loss.item() / args.log_interval,
+                                  epoch * len(train_list) + batch_idx)
 
             if args.dry_run:
                 break
 
 
-def net_test(model, device, test_loader, transform):
+def net_test(model, device, test_loader):
     model.eval()
     test_loss = 0
     correct = 0
@@ -281,22 +243,17 @@ def net_test(model, device, test_loader, transform):
 
 
 def main(model_in_parameters=dict(), run_args_dict=dict()):
-
     args = Args(**run_args_dict)
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
-    global writer
-    writer_comment = f' epochs = {args.epochs} ||  model_in_parameters ={model_in_parameters["in_frame_dim"]} ||  ' \
-                     f' out_frame_dim = {model_in_parameters["out_frame_dim"]}'
-    writer = SummaryWriter(comment=writer_comment)
+    if not yuvals_computer:
+        global writer
+        writer_comment = f' epochs = {args.epochs} ||  model_in_parameters ={model_in_parameters["in_frame_dim"]} ||  ' \
+                         f' out_frame_dim = {model_in_parameters["out_frame_dim"]}'
+        writer = SummaryWriter(comment=writer_comment)
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
-
-    # transform = transforms.Compose([
-    #     transforms.ToTensor(),
-    #     transforms.Normalize((0.1307,), (0.3081,))
-    # ])
 
     model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
@@ -341,18 +298,19 @@ def main(model_in_parameters=dict(), run_args_dict=dict()):
     # data, target = data / 255, target / 255
     # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
 
-    writer.add_graph(model, data)
+    if not yuvals_computer:
+        writer.add_graph(model, data)
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
-        logs_for_writer(model, epoch)
+        # logs_for_writer(model, epoch)
         train(args, model, device, train_dict, optimizer, epoch, batch_size=args.batch_size)  # dataset_dict
-        net_test(model, device, test_dict, transform=transform)
+        # net_test(model, device, test_dict)
         scheduler.step()
         elapsed = time.time() - epoch_start_time
-    if args.save_model:
-        torch.save(model.state_dict(), "mnist_cnn.pt")
+    # if args.save_model:
+    #     torch.save(model.state_dict(), "mnist_cnn.pt")
 
 
 if __name__ == '__main__':
@@ -364,13 +322,13 @@ if __name__ == '__main__':
     # wandb.init(project="test-project", entity="yuvalandchen")
 
     # If you want to run it you need to extract the dataset from the zip
-    # general_DS_folder = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
-    general_DS_folder = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
-    desired_dim = (120, 120)
+    general_DS_folder = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
+    # general_DS_folder = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
+    desired_dim = (60, 60)
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    number_of_videos = 12
+    number_of_videos = 4
     train_dict, test_dict, results_dict = make_train_and_test_dicts(general_DS_folder, number_of_videos, desired_dim)
 
     input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
@@ -389,26 +347,3 @@ if __name__ == '__main__':
     2. how many channels -option1->  F:x,y ; G:x,y  -option2->  option1 + other_2*x,y
     3. should we start with a segmentaion of a single frame or to start directly with couple of frames. - Answer: video
     """
-
-    # # Training settings
-    # parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    # parser.add_argument('--batch-size', type=int, default=2, metavar='N',
-    #                     help='input batch size for training (default: 64)')
-    # parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
-    #                     help='input batch size for testing (default: 1000)')
-    # parser.add_argument('--epochs', type=int, default=14, metavar='N',
-    #                     help='number of epochs to train (default: 14)')
-    # parser.add_argument('--lr', type=float, default=10, metavar='LR',
-    #                     help='learning rate (default: 1.0)')
-    # parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
-    #                     help='Learning rate step gamma (default: 0.7)')
-    # parser.add_argument('--no-cuda', action='store_true', default=False,
-    #                     help='disables CUDA training')
-    # parser.add_argument('--dry-run', action='store_true', default=False,
-    #                     help='quickly check a single pass')
-    # parser.add_argument('--seed', type=int, default=1, metavar='S',
-    #                     help='random seed (default: 1)')
-    # parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-    #                     help='how many batches to wait before logging training status')
-    # parser.add_argument('--save-model', action='store_true', default=False,
-    #                     help='For Saving the current Model')
