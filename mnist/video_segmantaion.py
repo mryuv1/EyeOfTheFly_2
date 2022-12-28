@@ -1,21 +1,16 @@
 from __future__ import print_function
-import argparse
-import sys
 import time
-from utils_modified_from_Unet import Up, Down, DoubleConv_3d, OutConv
+from video_seg_parts import Up, Down, DoubleConv_3d, OutConv
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-# from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from utils_for_DL import create_data_tuple, save_results_to_date_file
+from video_seg_utils import *
 
 global yuvals_computer
-yuvals_computer = 1
+yuvals_computer = 0
 
-from torch.utils.data import Dataset
 
 if not yuvals_computer:
     from torch.utils.tensorboard import SummaryWriter
@@ -49,30 +44,6 @@ from datetime import datetime
 #             segmentation = self.target_transform(segmentation)
 #         return images, segmentation
 
-def make_train_and_test_dicts(datasetPath, number_of_videos, desired_dim):
-    dataset_dict = create_data_tuple(datasetPath, number_of_videos=number_of_videos, desiered_dim=desired_dim,
-                                     number_of_frames=9)
-
-    # To create random train and test sets :
-    indexes = np.arange(number_of_videos)
-    np.random.shuffle(indexes)
-
-    train_indexes = indexes[0:int(np.round(0.8 * number_of_videos))]
-    test_indexes = indexes[int(np.round(0.8 * number_of_videos)) + 1::]
-
-    names_list = list(dataset_dict.keys())
-    train_dict = {}
-    test_dict = {}
-    results_dict = {}
-
-    for idx in train_indexes:
-        train_dict[names_list[idx]] = dataset_dict[names_list[idx]]
-
-    for idx in test_indexes:
-        test_dict[names_list[idx]] = dataset_dict[names_list[idx]]
-        results_dict[names_list[idx]] = list()
-
-    return train_dict, test_dict, results_dict
 
 
 class Args():
@@ -82,8 +53,8 @@ class Args():
         self.gamma = kwargs.setdefault('gamma', 0.7)
         self.epochs = kwargs.setdefault('epochs', 14)
         self.log_interval = kwargs.setdefault('log_interval', 10)
-        self.lr = kwargs.setdefault('epochs', 10)
-        self.no_cuda = kwargs.setdefault('epochs', False)
+        self.lr = kwargs.setdefault('lr', 40)
+        self.no_cuda = kwargs.setdefault('no_cuda', False)
         self.seed = kwargs.setdefault('seed', False)
 
 
@@ -119,7 +90,8 @@ class Net(nn.Module):
         x = self.up1(x4, x3)
         x = self.up2(x, x2)
         x = self.up3(x, x1)
-        output = self.outc(x)  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
+        output = self.outc(x)# torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
+        output = output.squeeze(1)
         return output
 
 
@@ -178,7 +150,7 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
                      f'and 2 in Glider.\nEach frame is ({input_dict["in_frame_dim"][2]}, {input_dict["in_frame_dim"][3]}).\n' + '\033[0m')
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     running_loss = 0.0
-    train_list = batchify(train_loader, batch_size=1)
+    train_list = batchify(train_loader, batch_size)
 
     for batch_idx, (data, target) in enumerate(train_list):
         # ----------------------------------------------------------------------------------------------------------#
@@ -192,22 +164,15 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        output = torch.squeeze(output, dim=0)
         criterion = nn.BCEWithLogitsLoss()
-        #TODO:to fix the line below
-        target = target[:,1:]
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader),
-                       100. * batch_idx / len(train_loader), loss.item()))
+            print(f'Train Epoch: {epoch} [Batch {batch_idx+1}/{len(train_list)}], Loss: {loss.item()}')
             if not yuvals_computer:
-                writer.add_scalar('training loss', loss.item() / args.log_interval,
-                                  epoch * len(train_list) + batch_idx)
-
+                writer.add_scalar('training loss', running_loss, epoch)
             if args.dry_run:
                 break
 
@@ -226,10 +191,7 @@ def net_test(model, device, test_loader):
             output = model(data)
             criterion = nn.BCEWithLogitsLoss()
             loss = criterion(output, target)
-            # loss = nn.L1Loss()
-            # loss = loss(output, target)
             test_loss += loss  # sum up batch loss
-            # pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
 
             # to put the output in the results dict:
             output_numpy = output.clone().cpu().numpy()
@@ -239,11 +201,10 @@ def net_test(model, device, test_loader):
                 tmp_list.append(output_numpy[:, i, :, :][0])
             results_dict[list(test_loader.keys())[idx]].append(tmp_list)
     test_loss /= len(test_loader)
-    print(f'The test loss is: {test_loss}')
+    return test_loss
 
 
-def main(model_in_parameters=dict(), run_args_dict=dict()):
-    args = Args(**run_args_dict)
+def main(model_in_parameters=dict(), args=Args()):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
     if not yuvals_computer:
@@ -254,49 +215,14 @@ def main(model_in_parameters=dict(), run_args_dict=dict()):
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
-
     model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-    print('Before pre process')
-    # Preprocess for train data
-    for k in train_dict.keys():
-        frames_orig = train_dict[k][0]
-        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
 
-        frames_preprocessed = [
-            frames_orig[:-1],
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
-        ]
-        train_dict[k] = (frames_preprocessed, train_dict[k][1])
-
-    # Preprocess for test data
-    for k in test_dict.keys():
-        frames_orig = test_dict[k][0]
-        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
-
-        frames_preprocessed = [
-            frames_orig[:-1],
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
-        ]
-        test_dict[k] = (frames_preprocessed, test_dict[k][1])
-
-    print('After pre process')
     data, target = list(train_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
     data, target = data.type(torch.DoubleTensor), target
     data, target = data.to(device), target.to(device)
-    # data, target = data.repeat(4, 1, 1, 1), target # 4,9,40,40
-
-    # tmp normalization:
-    # data, target = data / 255, target / 255
-    # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
 
     if not yuvals_computer:
         writer.add_graph(model, data)
@@ -304,11 +230,10 @@ def main(model_in_parameters=dict(), run_args_dict=dict()):
 
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
-        # logs_for_writer(model, epoch)
         train(args, model, device, train_dict, optimizer, epoch, batch_size=args.batch_size)  # dataset_dict
-        # net_test(model, device, test_dict)
         scheduler.step()
         elapsed = time.time() - epoch_start_time
+    net_test(model, device, test_dict)
     # if args.save_model:
     #     torch.save(model.state_dict(), "mnist_cnn.pt")
 
@@ -317,33 +242,30 @@ if __name__ == '__main__':
     import os
 
     save_data = 1
-    # import wandb
-    #
-    # wandb.init(project="test-project", entity="yuvalandchen")
 
     # If you want to run it you need to extract the dataset from the zip
-    general_DS_folder = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
-    # general_DS_folder = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
-    desired_dim = (60, 60)
+    # general_DS_folder = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
+    general_DS_folder = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
+    desired_dim = (128, 128)
 
     # The dataset format is:
-    # {'name_of_video', raw jpegs, segmented data}
-    number_of_videos = 4
-    train_dict, test_dict, results_dict = make_train_and_test_dicts(general_DS_folder, number_of_videos, desired_dim)
+    # {(raw jpegs, segmented data)}
+    number_of_videos = np.inf
+    train_dict, test_dict, results_dict = create_dataset(general_DS_folder, desired_dim, number_of_videos)
 
     input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
-                  'out_frame_dim': (1, 9, desired_dim[0], desired_dim[1]), 'Cout2': 8}
-    run_args_dict = dict()
+                  'out_frame_dim': (1, 8, desired_dim[0], desired_dim[1])}
 
-    main(input_dict, run_args_dict)
+    run_args = Args()
+    run_args.epochs = 20
+    run_args.gamma = 1
+    run_args.lr = 0.08
+    run_args.batch_size = 10
+
+    main(input_dict, run_args)
     writer.flush()
     writer.close()
 
     if save_data:
         save_results_to_date_file(results_dict)
-    """
-    Things that we need to talk about:
-    1. what is the resolution that we put in the net
-    2. how many channels -option1->  F:x,y ; G:x,y  -option2->  option1 + other_2*x,y
-    3. should we start with a segmentaion of a single frame or to start directly with couple of frames. - Answer: video
-    """
+

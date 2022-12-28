@@ -4,7 +4,8 @@ from matplotlib import pyplot as plt, cm
 from matplotlib.ticker import LinearLocator
 import csv
 
-def results_path(clip_path, file_name = ''):
+
+def results_path(clip_path, file_name=''):
     """
     Creates a results directory for a given clip.
     :param clip_path:
@@ -63,3 +64,29 @@ def write_dict_to_csv(d, file_name):
         writer.writerow(d.keys())
         for i in range(len(d[key_list[0]])):
             writer.writerow(d[key][i] for key in key_list)
+
+
+def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=100, fill='█', printEnd="\r"):
+    """
+    Call in a loop to create terminal progress bar
+    Print the value returned using ` end='' `
+    Example: print(progress_bar(i, 100, prefix='Process: '), end='')
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    res = f'\r{prefix} |{bar}| {percent}% {suffix}'
+    # Print New Line on Complete
+    if iteration == total:
+        res = res + '\n'
+    return res
+

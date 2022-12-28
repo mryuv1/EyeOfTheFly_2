@@ -1,5 +1,6 @@
 from __future__ import print_function
 import argparse
+import pickle
 import sys
 import time
 
@@ -10,7 +11,7 @@ import torch.optim as optim
 # from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from utils_for_DL import create_data_tuple, save_results_to_date_file
+from video_seg_utils import load_dataset, save_results_to_date_file
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 import random
@@ -44,8 +45,7 @@ from datetime import datetime
 #         return images, segmentation
 
 def make_train_and_test_dicts(datasetPath, number_of_videos, desired_dim):
-    dataset_dict = create_data_tuple(datasetPath, number_of_videos=number_of_videos, desiered_dim=desired_dim,
-                                     number_of_frames=9)
+    dataset_dict = load_dataset(datasetPath, number_of_videos=number_of_videos, desiered_dim=desired_dim)
 
     # To create random train and test sets :
     indexes = np.arange(number_of_videos)
@@ -69,16 +69,17 @@ def make_train_and_test_dicts(datasetPath, number_of_videos, desired_dim):
     return train_dict, test_dict, results_dict
 
 
-class Args():
+class Args:
     def __init__(self, **kwargs):
         self.batch_size = kwargs.setdefault('batch_size', 2)
         self.dry_run = kwargs.setdefault('dry_run', False)
-        self.gamma = kwargs.setdefault('gamma', 0.7)
+        self.gamma = kwargs.setdefault('gamma', 0.1)
         self.epochs = kwargs.setdefault('epochs', 14)
         self.log_interval = kwargs.setdefault('log_interval', 10)
         self.lr = kwargs.setdefault('epochs', 10)
-        self.no_cuda = kwargs.setdefault('epochs', False)
+        self.no_cuda = kwargs.setdefault('no_cuda', False)
         self.seed = kwargs.setdefault('seed', False)
+        self.save_model = kwargs.setdefault('save_model', False)
 
 
 class Net(nn.Module):
@@ -133,9 +134,11 @@ class Net(nn.Module):
         self.conv1 = nn.Conv3d(self.in_frame_dim[0], self.Cout1, self.conv1_kernel_size, stride=self.stride1,
                                padding=self.padding1,
                                dilation=self.dilation1)
+        self.batchNorm1 = nn.BatchNorm3d(self.Cout1)
         self.conv2 = nn.Conv3d(self.Cout1, self.Cout2, self.conv2_kernel_size, stride=self.stride2,
                                padding=self.padding2,
                                dilation=self.dilation2)
+        self.batchNorm2 = nn.BatchNorm3d(self.Cout2)
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
         self.fc1 = nn.Linear(self.linear1_input, self.linear2_input)
@@ -150,8 +153,10 @@ class Net(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
+        x = self.batchNorm1(x)
         x = F.relu(x)
         x = self.conv2(x)
+        x = self.batchNorm2(x)
         x = F.relu(x)
         x = F.max_pool3d(x, self.maxpool, stride=self.maxpool_stride)
         x = self.dropout1(x)
@@ -214,11 +219,13 @@ def batchify(data_dict: dict, batch_size: int) -> list:
 
 def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
     model.train()
+    """
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     print(
         '\033[96m' + f'This current option is for 2 kernels of Fourier (x,y) '
                      f'and 2 in Glider.\nEach frame is ({input_dict["in_frame_dim"][2]}, {input_dict["in_frame_dim"][3]}).\n' + '\033[0m')
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
+    """
     running_loss = 0.0
 
     train_list = batchify(train_loader, batch_size=batch_size)
@@ -280,9 +287,28 @@ def net_test(model, device, test_loader, transform):
     print(f'The test loss is: {test_loss}')
 
 
-def main(model_in_parameters=dict(), run_args_dict=dict()):
+def preprocess_data(data_dict):
+    # Assuming data_dict was created with make_train_and_test_dicts function
+    for k in data_dict.keys():
+        frames_orig = data_dict[k][0]
+        frames_orig = [f / max(f) for f in frames_orig]  # for the normalization
 
-    args = Args(**run_args_dict)
+        frames_preprocessed = [
+            frames_orig[:-1],
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
+            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
+        ]
+        data_dict[k] = (frames_preprocessed, data_dict[k][1])
+
+
+def is_preprocessed(data_dict):
+    return type(list(data_dict.values())[0][0][0]) is not np.ndarray
+
+
+def main(train_dict, test_dict, model_in_parameters=dict(), args=Args()):
+
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
     global writer
@@ -300,36 +326,15 @@ def main(model_in_parameters=dict(), run_args_dict=dict()):
 
     model = Net(**model_in_parameters).double().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+
+    # Preprocess data
     print('Before pre process')
-    # Preprocess for train data
-    for k in train_dict.keys():
-        frames_orig = train_dict[k][0]
-        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
-
-        frames_preprocessed = [
-            frames_orig[:-1],
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
-        ]
-        train_dict[k] = (frames_preprocessed, train_dict[k][1])
-
-    # Preprocess for test data
-    for k in test_dict.keys():
-        frames_orig = test_dict[k][0]
-        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
-
-        frames_preprocessed = [
-            frames_orig[:-1],
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1)
-        ]
-        test_dict[k] = (frames_preprocessed, test_dict[k][1])
-
+    if not is_preprocessed(train_dict):
+        train_dict = preprocess_data(train_dict)
+    if not is_preprocessed(test_dict):
+        test_dict = preprocess_data(test_dict)
     print('After pre process')
+
     data, target = list(train_dict.values())[0]
     data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
     data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
@@ -343,14 +348,17 @@ def main(model_in_parameters=dict(), run_args_dict=dict()):
 
     writer.add_graph(model, data)
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)
 
     for epoch in range(1, args.epochs + 1):
+        print('Started epoch ', epoch)
         epoch_start_time = time.time()
         logs_for_writer(model, epoch)
         train(args, model, device, train_dict, optimizer, epoch, batch_size=args.batch_size)  # dataset_dict
-        net_test(model, device, test_dict, transform=transform)
         scheduler.step()
         elapsed = time.time() - epoch_start_time
+        print('Finished epoch ', epoch, ': ', elapsed, ' seconds')
+    net_test(model, device, test_dict, transform=transform)
     if args.save_model:
         torch.save(model.state_dict(), "mnist_cnn.pt")
 
@@ -370,16 +378,38 @@ if __name__ == '__main__':
 
     # The dataset format is:
     # {'name_of_video', raw jpegs, segmented data}
-    number_of_videos = 12
-    train_dict, test_dict, results_dict = make_train_and_test_dicts(general_DS_folder, number_of_videos, desired_dim)
+    if not os.path.isdir('data_pickles'):
+        os.makedirs('data_pickles')
+    data_pickle_path = os.path.join('data_pickles', 'x'.join(str(d) for d in desired_dim)+'.pickle')
+    if os.path.isfile(data_pickle_path):
+        with open(data_pickle_path, 'rb') as f:
+            train_dict, test_dict, results_dict = pickle.load(f)
+        print('Loaded data.')
+    else:
+        print('Creating data...')
+        number_of_videos = 10
+        train_dict, test_dict, results_dict = make_train_and_test_dicts(general_DS_folder, number_of_videos, desired_dim)
+        preprocess_data(test_dict)
+        preprocess_data(train_dict)
+        with open(data_pickle_path, 'wb+') as f:
+            pickle.dump((train_dict, test_dict, results_dict), f)
+        print('Saved data.')
 
     input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
-                  'out_frame_dim': (1, 9, desired_dim[0], desired_dim[1]), 'Cout2': 8}
-    run_args_dict = dict()
+                  'out_frame_dim': (1, 9, desired_dim[0], desired_dim[1]),
+                  'Cout2': 8}
+    run_args = Args()
+    run_args.epochs = 20
+    run_args.gamma = 1
+    run_args.lr = 0.08
 
-    main(input_dict, run_args_dict)
-    writer.flush()
-    writer.close()
+    for gamma in [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5]:
+        for lr in [0.01, 0.025, 0.05, 0.07, 0.08, 0.09, 0.1]:
+            run_args.gamma = gamma
+            run_args.lr = lr
+            main(train_dict, test_dict, input_dict, run_args)
+            writer.flush()
+            writer.close()
 
     if save_data:
         save_results_to_date_file(results_dict)

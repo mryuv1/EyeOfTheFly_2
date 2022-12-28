@@ -40,8 +40,10 @@ def rescale(frames, target_min, target_max, target_type):
         return [np.zeros_like(f).astype(target_type) for f in frames]
     return [(target_min + (target_max - target_min) * (f - min_val) / (max_val - min_val)).astype(target_type) for f in frames]
 
+
 def change_type(frames, target_type):
     return [f.astype(target_type) for f in frames]
+
 
 def float_to_int(frames):
     # assuming frames is in range 0-1
