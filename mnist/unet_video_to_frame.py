@@ -50,7 +50,7 @@ from datetime import datetime
 #         return images, segmentation
 
 def make_train_and_test_dicts(datasetPath, number_of_videos, desired_dim):
-    dataset_dict = load_dataset(datasetPath, number_of_videos=number_of_videos, desiered_dim=desired_dim)
+    dataset_dict = load_dataset(datasetPath, number_of_videos=number_of_videos)
 
     # To create random train and test sets :
     indexes = np.arange(number_of_videos)

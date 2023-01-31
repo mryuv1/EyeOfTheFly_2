@@ -7,17 +7,17 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
 from video_seg_utils import *
-
-global yuvals_computer
-yuvals_computer = 0
-
-
-if not yuvals_computer:
-    from torch.utils.tensorboard import SummaryWriter
+import os
 import random
 import cv2
 from EOTF import EMD
 from datetime import datetime
+
+global yuvals_computer
+yuvals_computer = 0
+
+if not yuvals_computer:
+    from torch.utils.tensorboard import SummaryWriter
 
 
 # 'runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
@@ -45,17 +45,39 @@ from datetime import datetime
 #         return images, segmentation
 
 
+class CreateDatasetArgs:
+    def __init__(self, **kwargs):
+        self.image_size = kwargs.setdefault('desired_dim', (128,128))
+        self.number_of_videos = kwargs.setdefault('number_of_videos', np.inf)
+        self.preprocess_type = kwargs.setdefault('preprocess_type', None)
+        self.train_part = kwargs.setdefault('train_part', 0.8)
+        self.video_length = kwargs.setdefault('video_length', 9)
+        self.type = kwargs.setdefault('type', None)
 
-class Args():
+
+class RunArgs:
     def __init__(self, **kwargs):
         self.batch_size = kwargs.setdefault('batch_size', 2)
         self.dry_run = kwargs.setdefault('dry_run', False)
-        self.gamma = kwargs.setdefault('gamma', 0.7)
+        self.scheduler_gamma = kwargs.setdefault('gamma', 0.7)
+        self.scheduler_step_size = kwargs.setdefault('step_size', 5)
         self.epochs = kwargs.setdefault('epochs', 14)
         self.log_interval = kwargs.setdefault('log_interval', 10)
         self.lr = kwargs.setdefault('lr', 40)
         self.no_cuda = kwargs.setdefault('no_cuda', False)
         self.seed = kwargs.setdefault('seed', False)
+
+    def to_dict_form(self):
+        dict_to_return = dict()
+        dict_to_return['batch_size'] = self.batch_size
+        dict_to_return['dry_run'] = self.dry_run
+        dict_to_return['epochs'] = self.epochs
+        dict_to_return['log_interval'] = self.log_interval
+        dict_to_return['lr'] = self.lr
+        dict_to_return['no_cuda'] = self.no_cuda
+        dict_to_return['seed'] = self.seed
+
+        return dict_to_return
 
 
 class Net(nn.Module):
@@ -66,8 +88,8 @@ class Net(nn.Module):
         self.out_frame_dim = kwargs.setdefault('out_frame_dim', (9, 220, 120))
         self.out_channels_1 = kwargs.setdefault('out_channels_1', 32)
 
-
         # the network layers:
+        """
         self.inc = DoubleConv_3d(in_channels=self.in_frame_dim[0], out_channels=self.out_channels_1)
         self.down1 = Down(in_channels=self.out_channels_1, out_channels=2 * self.out_channels_1)
         self.down2 = Down(in_channels=2 * self.out_channels_1, out_channels=4 * self.out_channels_1)
@@ -76,6 +98,13 @@ class Net(nn.Module):
         self.up2 = Up(in_channels=4 * self.out_channels_1, out_channels=self.out_channels_1)
         self.up3 = Up(in_channels=2 * self.out_channels_1, out_channels=self.out_channels_1)
         self.outc = OutConv(self.out_channels_1, 1)
+        """
+        self.inc = DoubleConv_3d(in_channels=self.in_frame_dim[0], out_channels=self.out_channels_1)
+        self.down1 = Down(in_channels=self.out_channels_1, out_channels=2 * self.out_channels_1)
+        self.down2 = Down(in_channels=2 * self.out_channels_1, out_channels=2 * self.out_channels_1)
+        self.up1 = Up(in_channels=4 * self.out_channels_1, out_channels=self.out_channels_1)
+        self.up2 = Up(in_channels=2 * self.out_channels_1, out_channels=self.out_channels_1)
+        self.outc = OutConv(self.out_channels_1, 1)
         # self.init_weights()
 
     # def init_weights(self):
@@ -83,6 +112,7 @@ class Net(nn.Module):
     #     torch.nn.init.xavier_uniform_(self.conv2.weight)
 
     def forward(self, x):
+        """
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
@@ -90,7 +120,14 @@ class Net(nn.Module):
         x = self.up1(x4, x3)
         x = self.up2(x, x2)
         x = self.up3(x, x1)
-        output = self.outc(x)# torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
+        output = self.outc(x)  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
+        """
+        x1 = self.inc(x) # channels = out_channenls_1
+        x2 = self.down1(x1) # channels = 2 * out_channels_1
+        x3 = self.down2(x2) # channels = 2 * out_channels_1
+        x = self.up1(x3, x2)
+        x = self.up2(x, x1)
+        output = self.outc(x)  # torch.sigmoid(x) # torch.round(torch.sigmoid(x)) #
         output = output.squeeze(1)
         return output
 
@@ -150,8 +187,8 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
                      f'and 2 in Glider.\nEach frame is ({input_dict["in_frame_dim"][2]}, {input_dict["in_frame_dim"][3]}).\n' + '\033[0m')
     print('\033[95m' + '-----------------------------------------------------------------------------\n' + '\033[0m')
     running_loss = 0.0
+    criterion = nn.BCEWithLogitsLoss()
     train_list = batchify(train_loader, batch_size)
-
     for batch_idx, (data, target) in enumerate(train_list):
         # ----------------------------------------------------------------------------------------------------------#
         # TODO: when we build the DATALOADER we need to delete the lines below.
@@ -164,20 +201,19 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        criterion = nn.BCEWithLogitsLoss()
         loss = criterion(output, target)
         loss.backward()
-        optimizer.step()
         running_loss += loss.item()
+        optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print(f'Train Epoch: {epoch} [Batch {batch_idx+1}/{len(train_list)}], Loss: {loss.item()}')
-            if not yuvals_computer:
-                writer.add_scalar('training loss', running_loss, epoch)
+            print(f'Train Epoch: {epoch} [Batch {batch_idx + 1}/{len(train_list)}], Loss: {loss.item():.2f}')
             if args.dry_run:
                 break
+    running_loss /= len(train_list)
+    return running_loss
 
 
-def net_test(model, device, test_loader):
+def net_test(model, device, epoch, test_loader, args):
     model.eval()
     test_loss = 0
     correct = 0
@@ -191,27 +227,26 @@ def net_test(model, device, test_loader):
             output = model(data)
             criterion = nn.BCEWithLogitsLoss()
             loss = criterion(output, target)
-            test_loss += loss  # sum up batch loss
+            test_loss += loss.item()  # sum up batch loss
 
-            # to put the output in the results dict:
-            output_numpy = output.clone().cpu().numpy()
-            # devide into frames:
-            tmp_list = list()
-            for i in range(output_numpy.shape[1]):
-                tmp_list.append(output_numpy[:, i, :, :][0])
-            results_dict[list(test_loader.keys())[idx]].append(tmp_list)
+            if epoch>13:
+                # to put the output in the results dict:
+                output_numpy = output.clone().cpu().numpy()
+                # devide into frames:
+                tmp_list = list()
+                for i in range(output_numpy.shape[1]):
+                    tmp_list.append(output_numpy[:, i, :, :][0])
+                results_dict[list(test_loader.keys())[idx]].append(tmp_list)
     test_loss /= len(test_loader)
     return test_loss
 
 
-def main(model_in_parameters=dict(), args=Args()):
+def main(model_in_parameters=None, args=RunArgs()):
+    if model_in_parameters is None:
+        model_in_parameters = dict()
+
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
-    if not yuvals_computer:
-        global writer
-        writer_comment = f' epochs = {args.epochs} ||  model_in_parameters ={model_in_parameters["in_frame_dim"]} ||  ' \
-                         f' out_frame_dim = {model_in_parameters["out_frame_dim"]}'
-        writer = SummaryWriter(comment=writer_comment)
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -226,46 +261,107 @@ def main(model_in_parameters=dict(), args=Args()):
 
     if not yuvals_computer:
         writer.add_graph(model, data)
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    scheduler = StepLR(optimizer, step_size=args.scheduler_step_size, gamma=args.scheduler_gamma)
 
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
-        train(args, model, device, train_dict, optimizer, epoch, batch_size=args.batch_size)  # dataset_dict
+        train_loss = train(args, model, device, train_dict, optimizer, epoch, batch_size=args.batch_size)  # dataset_dict
+        epoch_end_time = time.time()
         scheduler.step()
-        elapsed = time.time() - epoch_start_time
-    net_test(model, device, test_dict)
+        test_loss = net_test(model, device, epoch, test_dict, args=args)
+
+        test_loss_dict[epoch] = test_loss
+        train_loss_dict[epoch] = train_loss
+        print(f'--- Test loss is {test_loss}. ---')
+        print(f'--- Epoch time is {epoch_end_time-epoch_start_time} seconds. ---')
+        print(f'--- Test time is {time.time()-epoch_end_time} seconds. ---')
+        train_loss_dict[epoch] = train_loss
+        if not yuvals_computer:
+            writer.add_scalar('training loss', train_loss, epoch)
+            writer.add_scalar('test loss', test_loss, epoch)
+        print()
     # if args.save_model:
     #     torch.save(model.state_dict(), "mnist_cnn.pt")
 
 
 if __name__ == '__main__':
-    import os
 
     save_data = 1
 
     # If you want to run it you need to extract the dataset from the zip
     # general_DS_folder = os.path.join('D:\Data_Sets', 'DAVIS-2017-trainval-480p', 'DAVIS')
     general_DS_folder = os.path.join('DAVIS-2017-trainval-480p', 'DAVIS')
-    desired_dim = (128, 128)
+
+    create_dataset_args = CreateDatasetArgs()
+    create_dataset_args.image_size = (128, 128)
+    create_dataset_args.number_of_videos = 20
+    create_dataset_args.type = 'float32'
+    create_dataset_args.video_length = 1
+    create_dataset_args.train_part = 0.8
 
     # The dataset format is:
     # {(raw jpegs, segmented data)}
-    number_of_videos = np.inf
-    train_dict, test_dict, results_dict = create_dataset(general_DS_folder, desired_dim, number_of_videos)
+    train_dict, test_dict, results_dict = create_dataset(general_DS_folder, create_dataset_args,
+                                                         override_saved_data=True, save_new_data=False)
 
-    input_dict = {'in_frame_dim': (5, 8, desired_dim[0], desired_dim[1]),
-                  'out_frame_dim': (1, 8, desired_dim[0], desired_dim[1])}
+    input_dict = {'in_frame_dim': (8, create_dataset_args.video_length,
+                                   create_dataset_args.image_size[0], create_dataset_args.image_size[1]),
+                  'out_frame_dim': (1, create_dataset_args.video_length,
+                                    create_dataset_args.image_size[0], create_dataset_args.image_size[1])}
+    # input_dict format: (channels, length, height, width)
 
-    run_args = Args()
-    run_args.epochs = 20
-    run_args.gamma = 1
-    run_args.lr = 0.08
+    run_args = RunArgs()
+    run_args.epochs = 25
+    run_args.scheduler_gamma = 0.3
+    run_args.scheduler_step_size = 5
+    run_args.lr = 0.1
     run_args.batch_size = 10
 
-    main(input_dict, run_args)
-    writer.flush()
-    writer.close()
+    print('\033[93m'
+          + '-----------------------------------------------------------------------------\n'
+          + '\033[0m')
+    print('\033[94m'
+          + f'The parameters for the run are: '
+            f'gamma = ({run_args.scheduler_gamma}), lr = ({run_args.lr}), batch_size = ({run_args.batch_size}).\n'
+          + '\033[0m')
+    print('\033[93m'
+          + '-----------------------------------------------------------------------------\n')
 
-    if save_data:
-        save_results_to_date_file(results_dict)
+    test_loss_dict = dict()
+    train_loss_dict = dict()
 
+    # Run Training
+    train_dict_orig = train_dict.copy()
+    test_dict_orig = test_dict.copy()
+    results_dict_orig = results_dict.copy()
+    for preprocess_type in ['emd', 'duplicate', 'random_emd']:
+        """
+        if preprocess_type == 'duplicate':
+            preprocess_func = duplicate_preprocess
+        elif preprocess_type == 'emd':
+            preprocess_func = emd_preprocess
+        elif preprocess_type == 'random_emd':
+            preprocess_func = random_emd_preprocess
+        """
+        print('starting preprocess: ' + preprocess_type)
+        train_dict = preprocess(train_dict_orig.copy(), preprocess_type, True)
+        test_dict = preprocess(test_dict_orig.copy(), preprocess_type, True)
+        results_dict = results_dict_orig.copy()
+        print('finished preprocess.')
+        if not yuvals_computer:
+            global writer
+            writer_comment = f' epochs = {run_args.epochs} ||  model_in_parameters ={input_dict["in_frame_dim"]} ||  ' \
+                             f' out_frame_dim = {input_dict["out_frame_dim"]} || preprocess_type = {preprocess_type}'
+            writer = SummaryWriter(comment=writer_comment)
+        main(input_dict, run_args)
+        writer.flush()
+        writer.close()
+
+        if save_data:
+            final_dict = {'run_params': run_args.to_dict_form(),
+                          'test_dict': test_dict,
+                          'results': results_dict,
+                          'test_loss_dict': test_loss_dict,
+                          'train_loss_dict': train_loss_dict}
+            file_name = f'gamma = ({run_args.scheduler_gamma}), lr = ({run_args.lr}), batch_size = ({run_args.batch_size}), preprocess_type = ({preprocess_type})'
+            save_results_to_date_file(final_dict, file_name=file_name)
