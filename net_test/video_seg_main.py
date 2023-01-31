@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 from video_seg_utils import *
 import os
@@ -12,37 +13,6 @@ import random
 import cv2
 from EOTF import EMD
 from datetime import datetime
-
-global yuvals_computer
-yuvals_computer = 0
-
-if not yuvals_computer:
-    from torch.utils.tensorboard import SummaryWriter
-
-
-# 'runs', comment=datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-# setup the writer as global
-
-
-# class CustomImageDataset(Dataset):
-#     def __init__(self, dataset_dict, transform=None, target_transform=None):
-#         self.dataset_dict = dataset_dict
-#         self.transform = transform
-#         self.target_transform = target_transform
-#
-#     def __len__(self):
-#         return len(self.dataset_dict)
-#
-#     def __getitem__(self, idx):
-#         names = list(self.dataset_dict.keys())
-#         name_idx = names[idx]
-#         images = self.dataset_dict[name_idx][0]
-#         segmentation = self.dataset_dict[name_idx][1]
-#         if self.transform:
-#             images = self.transform(images)
-#         if self.target_transform:
-#             segmentation = self.target_transform(segmentation)
-#         return images, segmentation
 
 
 class CreateDatasetArgs:
@@ -66,18 +36,6 @@ class RunArgs:
         self.lr = kwargs.setdefault('lr', 40)
         self.no_cuda = kwargs.setdefault('no_cuda', False)
         self.seed = kwargs.setdefault('seed', False)
-
-    def to_dict_form(self):
-        dict_to_return = dict()
-        dict_to_return['batch_size'] = self.batch_size
-        dict_to_return['dry_run'] = self.dry_run
-        dict_to_return['epochs'] = self.epochs
-        dict_to_return['log_interval'] = self.log_interval
-        dict_to_return['lr'] = self.lr
-        dict_to_return['no_cuda'] = self.no_cuda
-        dict_to_return['seed'] = self.seed
-
-        return dict_to_return
 
 
 class Net(nn.Module):
@@ -190,14 +148,6 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
     criterion = nn.BCEWithLogitsLoss()
     train_list = batchify(train_loader, batch_size)
     for batch_idx, (data, target) in enumerate(train_list):
-        # ----------------------------------------------------------------------------------------------------------#
-        # TODO: when we build the DATALOADER we need to delete the lines below.
-        #       This current option is for 2 kernels of Fourier (x, y) and 2 in Glider
-        # data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
-        # data, target = torch.unsqueeze(data, dim=0), torch.unsqueeze(target, dim=0)
-        # data, target = data.type(torch.DoubleTensor), target.type(torch.DoubleTensor)
-        # data, target = torch.squeeze(data, dim=0), torch.squeeze(target, dim=0)
-        # ----------------------------------------------------------------------------------------------------------#
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
@@ -216,7 +166,6 @@ def train(args, model, device, train_loader, optimizer, epoch, batch_size=1):
 def net_test(model, device, epoch, test_loader, args):
     model.eval()
     test_loss = 0
-    correct = 0
     with torch.no_grad():
         for idx, (data, target) in enumerate(list(test_loader.values())):
             data, target = torch.tensor(np.array(data)), torch.tensor(np.array(target))
@@ -232,7 +181,7 @@ def net_test(model, device, epoch, test_loader, args):
             if epoch>13:
                 # to put the output in the results dict:
                 output_numpy = output.clone().cpu().numpy()
-                # devide into frames:
+                # divide into frames:
                 tmp_list = list()
                 for i in range(output_numpy.shape[1]):
                     tmp_list.append(output_numpy[:, i, :, :][0])
@@ -259,8 +208,7 @@ def main(model_in_parameters=None, args=RunArgs()):
     data, target = data.type(torch.DoubleTensor), target
     data, target = data.to(device), target.to(device)
 
-    if not yuvals_computer:
-        writer.add_graph(model, data)
+    writer.add_graph(model, data)
     scheduler = StepLR(optimizer, step_size=args.scheduler_step_size, gamma=args.scheduler_gamma)
 
     for epoch in range(1, args.epochs + 1):
@@ -276,9 +224,8 @@ def main(model_in_parameters=None, args=RunArgs()):
         print(f'--- Epoch time is {epoch_end_time-epoch_start_time} seconds. ---')
         print(f'--- Test time is {time.time()-epoch_end_time} seconds. ---')
         train_loss_dict[epoch] = train_loss
-        if not yuvals_computer:
-            writer.add_scalar('training loss', train_loss, epoch)
-            writer.add_scalar('test loss', test_loss, epoch)
+        writer.add_scalar('training loss', train_loss, epoch)
+        writer.add_scalar('test loss', test_loss, epoch)
         print()
     # if args.save_model:
     #     torch.save(model.state_dict(), "mnist_cnn.pt")
@@ -348,11 +295,10 @@ if __name__ == '__main__':
         test_dict = preprocess(test_dict_orig.copy(), preprocess_type, True)
         results_dict = results_dict_orig.copy()
         print('finished preprocess.')
-        if not yuvals_computer:
-            global writer
-            writer_comment = f' epochs = {run_args.epochs} ||  model_in_parameters ={input_dict["in_frame_dim"]} ||  ' \
-                             f' out_frame_dim = {input_dict["out_frame_dim"]} || preprocess_type = {preprocess_type}'
-            writer = SummaryWriter(comment=writer_comment)
+        global writer
+        writer_comment = f' epochs = {run_args.epochs} ||  model_in_parameters ={input_dict["in_frame_dim"]} ||  ' \
+                         f' out_frame_dim = {input_dict["out_frame_dim"]} || preprocess_type = {preprocess_type}'
+        writer = SummaryWriter(comment=writer_comment)
         main(input_dict, run_args)
         writer.flush()
         writer.close()

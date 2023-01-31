@@ -1,7 +1,12 @@
+"""
+Creates random images, and then creates gifs for those images with certain types of movements.
+Quantifies the amount of movement in each gif using EMDs.
+"""
+
 import numpy as np
 from EOTF import EMD
 from Utils import video_utils
-import writing_results_utils
+from Utils import writing_results_utils
 
 fourier_motion = {
     'fourier_score': [],
@@ -16,7 +21,7 @@ random_motion = {
     'glider_score': []
 }
 
-imsize = 10
+imsize = 100
 
 for i in range(100):
     print(repr(i))

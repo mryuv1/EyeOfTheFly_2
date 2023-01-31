@@ -9,12 +9,11 @@ Change it however you want.
 import os
 import pickle
 import time
-
 import numpy as np
 
 from EOTF import EMD, PhotoreceptorImageConverter
 from Utils import video_utils, old_videos_name_parser
-import writing_results_utils
+import Utils.writing_results_utils as writing_results_utils
 from stand_alone_scripts import create_animations
 
 # FLAGS
@@ -56,8 +55,8 @@ def get_paths_and_names():
     """
 
     #base_path = r'C:\Users\chent\PycharmProjects\EyeOfTheFly_2\data\RealInputClips2\Pillar(A)\all_videos'
-    base_path = os.path.join(os.getcwd(),'data','animations_2')
-    base_path = os.path.join(os.getcwd(),'data','nature_images','gifs')
+    base_path = os.path.join(r'C:\Users\chent\Desktop\Project\data','animations_2')
+    base_path = os.path.join(r'C:\Users\chent\Desktop\Project\data','nature_images','gifs')
     files = os.listdir(base_path)
     files = [f for f in files if ('.mp4' in f) or ('.gif' in f)] # keep only gifs
     files_names = [os.path.splitext(f)[0] for f in files]

@@ -1,10 +1,7 @@
 import cv2
 import os
-# import matplotlib.pyplot as plt
-import numpy as np
 import pickle
-
-from mnist.video_segmantaion import CreateDatasetArgs
+from video_seg_main import CreateDatasetArgs
 from preprocess_utils import *
 
 
@@ -111,15 +108,10 @@ def create_dataset(dataset_dir,
                 [np.rot90(f, k) for f in element[1]]
             ))
 
-    # preprocess
-    print('Starting Preprocess...')
-    if args.preprocess_type == 'emd':
-        dataset = emd_preprocess(dataset)
-    elif args.preprocess_type == 'duplicate':
-        dataset = duplicate_preprocess(dataset)
-    elif args.preprocess_type == 'random_emd':
-        dataset = random_emd_preprocess(dataset)
-    print('Finished Preprocess.')
+    if args.preprocess_type:
+        print('Starting Preprocess...')
+        dataset = preprocess(dataset, preprocess_type=args.preprocess_type)
+        print('Finished Preprocess.')
 
     if args.type:
         change_data_type(dataset, args.type)

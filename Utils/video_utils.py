@@ -1,7 +1,7 @@
 import cv2
 import imageio
 import numpy as np
-import image_utils
+import Utils.image_utils as image_utils
 
 
 def read_frames(input_clip: str, grayscale: bool = True) -> list:
@@ -38,7 +38,7 @@ def rescale(frames, target_min, target_max, target_type):
     max_val = np.max(frames)
     if max_val == 0:
         return [np.zeros_like(f).astype(target_type) for f in frames]
-    return [(target_min + (target_max - target_min) * (f - min_val) / (max_val - min_val)).astype(target_type) for f in frames]
+    return [(target_min + (target_max - target_min) * ((f - min_val) / (max_val - min_val))).astype(target_type) for f in frames]
 
 
 def change_type(frames, target_type):

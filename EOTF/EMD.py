@@ -1,3 +1,8 @@
+"""
+Implements Elementary Motion Detector (Nitzany 2014)
+Use function 'forward_video' (template is B in the article)
+"""
+
 import numpy as np
 
 TEMPLATE_FOURIER = np.array([[1, 0], [0, 1]])
@@ -110,6 +115,7 @@ def forward_video(frames, template, axis=0):
     :return: A new video (as a list of frames) of EMD responses.
     :param center: Whether of not subtract the mean value of each frame
     """
+    # TODO: Implement threading
 
     result = []
     if axis == 0:

@@ -1,3 +1,9 @@
+"""
+Old version of our net, based on mnist
+as of 31.1 - probably doesn't work, a lot of changes were made in other files
+"""
+
+
 from __future__ import print_function
 import argparse
 import pickle

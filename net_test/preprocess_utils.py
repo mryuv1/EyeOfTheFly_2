@@ -11,7 +11,7 @@ def is_preprocessed(data_dict):
 
 
 def preprocess(dataset, preprocess_type, print_progress=False):
-    def _emd(dataset, k, print_progress):
+    def _emd(dataset, k):
         frames_orig = dataset[k][0]
         frames_orig = [f / 255 for f in frames_orig]  # for the normalization
         frames_preprocessed = [
@@ -27,7 +27,7 @@ def preprocess(dataset, preprocess_type, print_progress=False):
         ]
         dataset[k] = (frames_preprocessed, dataset[k][1][:-1])
 
-    def _duplicate(dataset, k, print_progress):
+    def _duplicate(dataset, k):
         frames_orig = dataset[k][0]
         frames_orig = [f / 255 for f in frames_orig]  # for the normalization
         frames_preprocessed = [
@@ -43,7 +43,7 @@ def preprocess(dataset, preprocess_type, print_progress=False):
         ]
         dataset[k] = (frames_preprocessed, dataset[k][1][:-1])
 
-    def _random_emd(dataset, k, print_progress):
+    def _random_emd(dataset, k):
         frames_orig = dataset[k][0]
         frames_orig = [f / 255 for f in frames_orig]  # for the normalization
 
@@ -82,7 +82,7 @@ def preprocess(dataset, preprocess_type, print_progress=False):
     if print_progress:
         print(progress_bar(0, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
     for i, k in enumerate(list(dataset.keys())):
-        x = Thread(target=preprocess_func, args=(dataset, k, print_progress))
+        x = Thread(target=preprocess_func, args=(dataset, k))
         x.start()
         x.join()
         if print_progress:
@@ -90,89 +90,6 @@ def preprocess(dataset, preprocess_type, print_progress=False):
     if print_progress:
         print()
 
-    return dataset
-
-
-def emd_preprocess(dataset, print_progress=False):
-    if print_progress:
-        print(progress_bar(0, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
-    for i, k in enumerate(list(dataset.keys())):
-        frames_orig = dataset[k][0]
-        frames_orig = [f / 255.0 for f in frames_orig]  # for the normalization
-
-        frames_preprocessed = [
-            #frames_orig[:-1],
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_FOURIER, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_GLIDER, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_SPATIAL, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_SPATIAL, axis=1),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_TEMPORAL, axis=0),
-            EMD.forward_video(frames_orig, EMD.TEMPLATE_TEMPORAL, axis=1),
-        ]
-        dataset[k] = (frames_preprocessed, dataset[k][1][:-1])
-        if print_progress:
-            print(progress_bar(i, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
-    return dataset
-
-
-def duplicate_preprocess(dataset, print_progress=False):
-    if print_progress:
-        print(progress_bar(0, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
-    for i,k in enumerate(list(dataset.keys())):
-        frames_orig = dataset[k][0]
-        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
-
-        frames_preprocessed = [
-            #frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1],
-            frames_orig[:-1]
-        ]
-        dataset[k] = (frames_preprocessed, dataset[k][1][:-1])
-        if print_progress:
-            print(progress_bar(i, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
-    return dataset
-
-
-def random_emd_preprocess(dataset, print_progress=False):
-    if print_progress:
-        print(progress_bar(0, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
-
-    templates = [
-        np.random.rand(2, 2),
-        np.random.rand(2, 2),
-        np.random.rand(2, 2),
-        np.random.rand(2, 2),
-        np.random.rand(2, 2),
-        np.random.rand(2, 2),
-        np.random.rand(2, 2),
-        np.random.rand(2, 2)
-    ]
-    for i, k in enumerate(list(dataset.keys())):
-        frames_orig = dataset[k][0]
-        frames_orig = [f / 255 for f in frames_orig]  # for the normalization
-
-        frames_preprocessed = [
-            #frames_orig[:-1],
-            EMD.forward_video(frames_orig, templates[0], axis=0),
-            EMD.forward_video(frames_orig, templates[1], axis=1),
-            EMD.forward_video(frames_orig, templates[2], axis=0),
-            EMD.forward_video(frames_orig, templates[3], axis=0),
-            EMD.forward_video(frames_orig, templates[4], axis=0),
-            EMD.forward_video(frames_orig, templates[5], axis=0),
-            EMD.forward_video(frames_orig, templates[6], axis=0),
-            EMD.forward_video(frames_orig, templates[7], axis=1)
-        ]
-        dataset[k] = (frames_preprocessed, dataset[k][1][:-1])
-        if print_progress:
-            print(progress_bar(i, len(dataset), length=50, prefix='Preprocessed: ', decimals=2), end='')
     return dataset
 
 

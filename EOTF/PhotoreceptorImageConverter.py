@@ -1,3 +1,9 @@
+"""
+Converts an image to a matrix of simulated photoreceptors' response.
+Each photoreceptor's response is a weighted mean of grey-levels in a window.
+"""
+
+
 import math
 import numpy as np
 
